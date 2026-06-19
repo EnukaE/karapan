@@ -25,6 +25,8 @@ data class ChecklistItem(
     val position: Int = 0,
     val dueDate: Long? = null,
     val locationName: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val isAddedToToday: Boolean = false,
     val isIdea: Boolean = false,

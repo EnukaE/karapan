@@ -12,7 +12,7 @@ import androidx.room.PrimaryKey
             entity = Category::class,
             parentColumns = ["id"],
             childColumns = ["categoryId"],
-            onDelete = ForeignKey.SET_NULL // Keep checklist if category is deleted
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [Index(value = ["categoryId"])]
@@ -24,6 +24,8 @@ data class Checklist(
     val categoryId: Int? = null,
     val dueDate: Long? = null,
     val locationName: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
     val isTemplate: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val projectId: Int? = null,

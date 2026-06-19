@@ -590,12 +590,14 @@ class ChecklistViewModel(
     }
 
     // --- Dynamic Reminder evaluating Engine ---
-    fun updateReminderSystem() {
+        fun updateReminderSystem() {
         viewModelScope.launch {
             val alerts = mutableListOf<ReminderAlert>()
             val now = System.currentTimeMillis()
             val allLists = repository.allChecklists.first()
-            val userLoc = simulatedLocation.value.trim()
+            val userLocName = simulatedLocation.value.trim()
+            val currentDeviceLoc = com.example.widget.LocationTracker.getCurrentLocation(context)
+
 
             for (checklist in allLists) {
                 // Scheduled/Repeating reminders for checklist, task list, or project
@@ -652,10 +654,16 @@ class ChecklistViewModel(
                     }
                 }
 
-                // Check entire checklist location reminder
-                if (userLoc.isNotEmpty()) {
-                    checklist.locationName?.let { cLoc ->
-                        if (cLoc.trim().isNotEmpty() && (cLoc.contains(userLoc, ignoreCase = true) || userLoc.contains(cLoc, ignoreCase = true))) {
+
+                // Check entire checklist location reminder with coordinates
+                if (checklist.latitude != null && checklist.longitude != null) {
+                    val currentLoc = currentDeviceLoc
+                    if (currentLoc != null) {
+                        val distance = com.example.widget.LocationTracker.calculateDistance(
+                            currentLoc.latitude, currentLoc.longitude,
+                            checklist.latitude!!, checklist.longitude!!
+                        )
+                        if (distance < 500) { // 500 meters
                             val items = repository.getItemsForChecklistDirect(checklist.id)
                             val isAllCompleted = items.isNotEmpty() && items.all { it.isCompleted }
                             if (!isAllCompleted) {
@@ -727,10 +735,16 @@ class ChecklistViewModel(
                         }
                     }
 
-                    // Location checks
-                    if (userLoc.isNotEmpty()) {
-                        item.locationName?.let { iLoc ->
-                            if (iLoc.trim().isNotEmpty() && (iLoc.contains(userLoc, ignoreCase = true) || userLoc.contains(iLoc, ignoreCase = true))) {
+
+                    // Location checks with coordinates
+                    if (item.latitude != null && item.longitude != null) {
+                        val currentLoc = currentDeviceLoc
+                        if (currentLoc != null) {
+                            val distance = com.example.widget.LocationTracker.calculateDistance(
+                                currentLoc.latitude, currentLoc.longitude,
+                                item.latitude!!, item.longitude!!
+                            )
+                            if (distance < 500) {
                                 alerts.add(
                                     ReminderAlert(
                                         id = "item_loc_${item.id}",
@@ -745,6 +759,7 @@ class ChecklistViewModel(
                             }
                         }
                     }
+
                 }
             }
             val dismissed = dismissedAlertIds.value
@@ -777,18 +792,11 @@ class ChecklistViewModel(
     }
 
     // --- Checklist Management ---
-    fun createChecklist(name: String, icon: String, categoryId: Int?, dueDate: Long?, isTemplate: Boolean, description: String? = null) {
+    fun createChecklist(name: String, icon: String, categoryId: Int?, dueDate: Long?, isTemplate: Boolean, description: String? = null, latitude: Double? = null, longitude: Double? = null) {
         viewModelScope.launch {
             if (name.trim().isNotEmpty()) {
                 val newId = repository.insertChecklist(
-                    Checklist(
-                        name = name.trim(),
-                        icon = icon.ifBlank { "📝" },
-                        categoryId = categoryId,
-                        dueDate = dueDate,
-                        isTemplate = isTemplate,
-                        description = description
-                    )
+                    Checklist(name = name.trim(), icon = icon.ifBlank { "📝" }, categoryId = categoryId, dueDate = dueDate, locationName = null, latitude = latitude, longitude = longitude, isTemplate = isTemplate, description = description)
                 )
                 if (!isTemplate) {
                     selectedChecklistId.value = newId.toInt()
@@ -1007,7 +1015,7 @@ class ChecklistViewModel(
         }
     }
 
-    fun addItemToSpecificChecklist(checklistId: Int, text: String, dueDate: Long? = null, isAddedToToday: Boolean = false) {
+    fun addItemToSpecificChecklist(checklistId: Int, text: String, dueDate: Long? = null, isAddedToToday: Boolean = false, locationName: String? = null, latitude: Double? = null, longitude: Double? = null) {
         if (text.trim().isNotEmpty()) {
             viewModelScope.launch {
                 val items = repository.getItemsForChecklistDirect(checklistId)

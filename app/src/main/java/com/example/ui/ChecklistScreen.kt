@@ -77,6 +77,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.net.Uri
 import android.content.Intent
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
+
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -3096,8 +3103,10 @@ fun ChecklistScreen(
             MapPickerDialog(
                 initialLocation = locationInput,
                 onDismiss = { showMapPickerForChecklist = false },
-                onLocationSelected = { loc ->
+                onLocationSelected = { loc, lat, lng ->
                     locationInput = loc
+                    // Store lat/lng temporarily in some state if needed, or just use them in the confirm button
+                    // For now let's just use the name as requested, but we have the coordinates!
                     showMapPickerForChecklist = false
                 }
             )
@@ -3458,7 +3467,7 @@ fun ChecklistScreen(
             MapPickerDialog(
                 initialLocation = locationInput,
                 onDismiss = { showMapPickerForItem = false },
-                onLocationSelected = { loc ->
+                onLocationSelected = { loc, lat, lng ->
                     locationInput = loc
                     showMapPickerForItem = false
                 }
@@ -4641,288 +4650,60 @@ fun AddChecklistDialog(
 }
 
 @Composable
+
+@Composable
 fun MapPickerDialog(
     initialLocation: String,
+    initialLat: Double? = null,
+    initialLng: Double? = null,
     onDismiss: () -> Unit,
-    onLocationSelected: (String) -> Unit
+    onLocationSelected: (String, Double, Double) -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedLocationName by remember { mutableStateOf(initialLocation.ifEmpty { "Downtown Hub" }) }
-    
-    // Preset locations to simulate search & quick selection
-    val presets = listOf(
-        MapLocationPreset("Home", 150f, 200f, "Pleasant Street, Cozy Suburb"),
-        MapLocationPreset("Work", 340f, 120f, "Technology Center, Main Office"),
-        MapLocationPreset("Library", 120f, 320f, "City Public Library, 3rd Ave"),
-        MapLocationPreset("Grocery", 280f, 260f, "Green Fields Supermarket"),
-        MapLocationPreset("Gym", 220f, 180f, "Metropolitan Athletic Gym"),
-        MapLocationPreset("Central Park", 380f, 400f, "Central Recreation Park"),
-        MapLocationPreset("Downtown", 250f, 300f, "Grand Plaza, Downtown Lane")
-    )
-    
-    var currentMapOffset by remember { mutableStateOf(Offset(250f, 250f)) }
-    
-    // Auto-align card map offset depending on selected preset
-    LaunchedEffect(selectedLocationName) {
-        val found = presets.find { it.name.equals(selectedLocationName, ignoreCase = true) }
-        if (found != null) {
-            currentMapOffset = Offset(found.x, found.y)
-        }
+    val defaultLatLng = LatLng(initialLat ?: 6.9271, initialLng ?: 79.8612) // Default to Colombo if none
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(defaultLatLng, 15f)
     }
-    
+    var selectedLatLng by remember { mutableStateOf(defaultLatLng) }
+    var locationName by remember { mutableStateOf(initialLocation) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Place,
-                        contentDescription = "Google Maps",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Google Maps Picker", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                }
-                Text(
-                    "Simulated fully interactive location coordinate selector",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
-            }
-        },
+        title = { Text("Select Location on Google Maps") },
         text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Search field inside map
+            Column(modifier = Modifier.fillMaxWidth().height(400.dp)) {
                 OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { query ->
-                        searchQuery = query
-                        val matched = presets.find { it.name.contains(query, ignoreCase = true) || it.address.contains(query, ignoreCase = true) }
-                        if (matched != null) {
-                            selectedLocationName = matched.name
-                        }
-                    },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search map") },
-                    placeholder = { Text("Search places or streets...") },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    modifier = Modifier.fillMaxWidth().testTag("map_search_input")
+                    value = locationName,
+                    onValueChange = { locationName = it },
+                    label = { Text("Location Name") },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                 )
-                
-                // Active location display
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("📍", fontSize = 20.sp, modifier = Modifier.padding(end = 8.dp))
-                        Column {
-                            Text(selectedLocationName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                            val presetAddr = presets.find { it.name.equals(selectedLocationName, ignoreCase = true) }?.address ?: "Custom Marker Pin Coordinates"
-                            Text(presetAddr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                GoogleMap(
+                    modifier = Modifier.fillMaxSize(),
+                    cameraPositionState = cameraPositionState,
+                    onMapClick = {
+                        selectedLatLng = it
                     }
-                }
-                
-                // Draggable Map Area Canvas in Card
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(260.dp)
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                            shape = RoundedCornerShape(16.dp)
-                        ),
-                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFFE3EDF7)) // Beautiful Google Maps pastel blue
-                            .pointerInput(Unit) {
-                                detectDragGestures { change, dragAmount ->
-                                    change.consume()
-                                    val newOffset = currentMapOffset - dragAmount
-                                    currentMapOffset = Offset(
-                                        newOffset.x.coerceIn(50f, 450f),
-                                        newOffset.y.coerceIn(50f, 450f)
-                                    )
-                                    val closest = presets.minByOrNull { 
-                                        val dx = it.x - currentMapOffset.x
-                                        val dy = it.y - currentMapOffset.y
-                                        dx*dx + dy*dy 
-                                    }
-                                    if (closest != null) {
-                                        selectedLocationName = closest.name
-                                    }
-                                }
-                            }
-                            .pointerInput(Unit) {
-                                detectTapGestures { tapOffset ->
-                                    currentMapOffset = tapOffset
-                                    val closest = presets.minByOrNull { 
-                                        val dx = it.x - currentMapOffset.x
-                                        val dy = it.y - currentMapOffset.y
-                                        dx * dx + dy * dy 
-                                    }
-                                    if (closest != null) {
-                                        selectedLocationName = closest.name
-                                    }
-                                }
-                            }
-                    ) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val w = size.width
-                            val h = size.height
-                            
-                            drawRoundRect(
-                                color = Color(0xFFF1F5F9), // landmass
-                                topLeft = Offset(-100f + (w/2f - currentMapOffset.x), -100f + (h/2f - currentMapOffset.y)),
-                                size = androidx.compose.ui.geometry.Size(800f, 800f),
-                                cornerRadius = CornerRadius(24f)
-                            )
-                            
-                            drawRoundRect(
-                                color = Color(0xFFAAF2C4), // park
-                                topLeft = Offset(280f - currentMapOffset.x + w/2f, 300f - currentMapOffset.y + h/2f),
-                                size = androidx.compose.ui.geometry.Size(200f, 250f),
-                                cornerRadius = CornerRadius(20f)
-                            )
-                            
-                            val streetColor = Color.White
-                            val streetStroke = Stroke(width = 16f, cap = StrokeCap.Round)
-                            
-                            drawLine(
-                                color = streetColor,
-                                start = Offset(150f - currentMapOffset.x + w/2f, -200f - currentMapOffset.y + h/2f),
-                                end = Offset(150f - currentMapOffset.x + w/2f, 800f - currentMapOffset.y + h/2f),
-                                strokeWidth = streetStroke.width,
-                                cap = streetStroke.cap
-                            )
-                            drawLine(
-                                color = streetColor,
-                                start = Offset(300f - currentMapOffset.x + w/2f, -200f - currentMapOffset.y + h/2f),
-                                end = Offset(300f - currentMapOffset.x + w/2f, 800f - currentMapOffset.y + h/2f),
-                                strokeWidth = streetStroke.width,
-                                cap = streetStroke.cap
-                            )
-                            
-                            drawLine(
-                                color = streetColor,
-                                start = Offset(-200f - currentMapOffset.x + w/2f, 180f - currentMapOffset.y + h/2f),
-                                end = Offset(800f - currentMapOffset.x + w/2f, 180f - currentMapOffset.y + h/2f),
-                                strokeWidth = streetStroke.width,
-                                cap = streetStroke.cap
-                            )
-                            
-                            drawLine(
-                                color = streetColor,
-                                start = Offset(-200f - currentMapOffset.x + w/2f, 320f - currentMapOffset.y + h/2f),
-                                end = Offset(800f - currentMapOffset.x + w/2f, 320f - currentMapOffset.y + h/2f),
-                                strokeWidth = streetStroke.width,
-                                cap = streetStroke.cap
-                            )
-                            
-                            presets.forEach { preset ->
-                                val px = preset.x - currentMapOffset.x + w/2f
-                                val py = preset.y - currentMapOffset.y + h/2f
-                                
-                                drawCircle(
-                                    color = Color(0xFF1A73E8).copy(alpha = 0.3f),
-                                    center = Offset(px, py),
-                                    radius = 16f
-                                )
-                                drawCircle(
-                                    color = Color(0xFF1A73E8),
-                                    center = Offset(px, py),
-                                    radius = 6f
-                                )
-                            }
-                        }
-                        
-                        Icon(
-                            imageVector = Icons.Default.Place,
-                            contentDescription = "Active Pin Placement",
-                            tint = Color.Red,
-                            modifier = Modifier
-                                .size(42.dp)
-                                .align(Alignment.Center)
-                                .offset(y = (-18).dp)
-                        )
-                        
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(8.dp)
-                        ) {
-                            Text(
-                                "Drag map or tap to drop pin",
-                                fontSize = 9.sp,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-                
-                Text(
-                    "Quick Hotspot Pinpoints",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    presets.forEach { preset ->
-                        val isSelected = selectedLocationName.equals(preset.name, ignoreCase = true)
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { selectedLocationName = preset.name },
-                            label = { Text(preset.name) },
-                            leadingIcon = { Text("📍", fontSize = 12.sp) },
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                    }
+                    Marker(
+                        state = MarkerState(position = selectedLatLng),
+                        title = locationName,
+                        snippet = "Selected Location"
+                    )
                 }
             }
         },
         confirmButton = {
-            Button(
-                onClick = { onLocationSelected(selectedLocationName) },
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Select This Location")
+            Button(onClick = {
+                onLocationSelected(locationName, selectedLatLng.latitude, selectedLatLng.longitude)
+            }) {
+                Text("Confirm Location")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
-        },
-        modifier = Modifier.fillMaxWidth().testTag("map_picker_dialog")
+        }
     )
 }
 
