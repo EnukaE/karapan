@@ -1,0 +1,47 @@
+package com.example.data
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+
+@Database(
+    entities = [Category::class, Checklist::class, ChecklistItem::class],
+    version = 7,
+    exportSchema = false
+)
+abstract class ChecklistDatabase : RoomDatabase() {
+    abstract fun checklistDao(): ChecklistDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: ChecklistDatabase? = null
+
+        fun getDatabase(context: Context): ChecklistDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    ChecklistDatabase::class.java,
+                    "checklist_database"
+                )
+                .fallbackToDestructiveMigration()
+                .build()
+                
+                try {
+                    instance.invalidationTracker.addObserver(
+                        object : androidx.room.InvalidationTracker.Observer(arrayOf("checklists", "checklist_items")) {
+                            override fun onInvalidated(tables: Set<String>) {
+                                com.example.AlarmScheduler.rescheduleAllAlarms(context.applicationContext)
+                            }
+                        }
+                    )
+                } catch (e: Exception) {
+                    // Fail-safe if dynamic classloader limits tracker access during initial migration
+                }
+
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}
