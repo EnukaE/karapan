@@ -1,22 +1,6 @@
 package com.example.data
-
-import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
-@Entity(
-    tableName = "checklists",
-    foreignKeys = [
-        ForeignKey(
-            entity = Category::class,
-            parentColumns = ["id"],
-            childColumns = ["categoryId"],
-            onDelete = ForeignKey.SET_NULL
-        )
-    ],
-    indices = [Index(value = ["categoryId"])]
-)
+import androidx.room.*
+@Entity(tableName = "checklists")
 data class Checklist(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val name: String,
@@ -27,12 +11,5 @@ data class Checklist(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val isTemplate: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis(),
-    val projectId: Int? = null,
-    val isVisibleInTaskListSec: Boolean = false,
-    val isReminderEnabled: Boolean = false,
-    val isAllDay: Boolean = true,
-    val reminderTime: String? = null,
-    val repeatInterval: String? = "none",
-    val description: String? = null
+    val createdAt: Long = System.currentTimeMillis()
 )

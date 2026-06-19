@@ -1,7 +1,0 @@
-.gradle/
-build/
-app/build/
-*.jks
-*.log
-build_log.txt
-.DS_Store
