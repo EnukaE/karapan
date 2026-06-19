@@ -17,8 +17,15 @@ import java.util.*
 class TodayWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        for (appWidgetId in appWidgetIds) {
-            updateAppWidget(context, appWidgetManager, appWidgetId)
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                for (appWidgetId in appWidgetIds) {
+                    updateAppWidget(context, appWidgetManager, appWidgetId)
+                }
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 
@@ -28,34 +35,42 @@ class TodayWidgetProvider : AppWidgetProvider() {
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val componentName = android.content.ComponentName(context, TodayWidgetProvider::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-            onUpdate(context, appWidgetManager, appWidgetIds)
+
+            val pendingResult = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    for (appWidgetId in appWidgetIds) {
+                        updateAppWidget(context, appWidgetManager, appWidgetId)
+                    }
+                } finally {
+                    pendingResult.finish()
+                }
+            }
         }
     }
 
     companion object {
-        fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
+        suspend fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
             val views = RemoteViews(context.packageName, R.layout.today_widget)
 
-            CoroutineScope(Dispatchers.IO).launch {
-                val db = ChecklistDatabase.getDatabase(context)
-                val items = db.checklistDao().getAllItems().first()
-                val now = System.currentTimeMillis()
-                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                val todayStr = sdf.format(Date(now))
+            val db = ChecklistDatabase.getDatabase(context)
+            val items = db.checklistDao().getAllItems().first()
+            val now = System.currentTimeMillis()
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val todayStr = sdf.format(Date(now))
 
-                val todayItems = items.filter { item ->
-                    !item.isCompleted && (item.isAddedToToday || (item.dueDate != null && sdf.format(Date(item.dueDate)) == todayStr))
-                }
-
-                if (todayItems.isEmpty()) {
-                    views.setTextViewText(R.id.widget_title, "No tasks for today! 🎉")
-                } else {
-                    val text = todayItems.joinToString("\n") { "• ${it.text}" }
-                    views.setTextViewText(R.id.widget_title, "Today's Tasks:\n$text")
-                }
-
-                appWidgetManager.updateAppWidget(appWidgetId, views)
+            val todayItems = items.filter { item ->
+                !item.isCompleted && (item.isAddedToToday || (item.dueDate != null && sdf.format(Date(item.dueDate)) == todayStr))
             }
+
+            if (todayItems.isEmpty()) {
+                views.setTextViewText(R.id.widget_title, "No tasks for today! 🎉")
+            } else {
+                val text = todayItems.joinToString("\n") { "• ${it.text}" }
+                views.setTextViewText(R.id.widget_title, "Today's Tasks:\n$text")
+            }
+
+            appWidgetManager.updateAppWidget(appWidgetId, views)
         }
 
         fun triggerRefresh(context: Context) {

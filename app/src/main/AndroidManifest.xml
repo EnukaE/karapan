@@ -26,6 +26,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyApplication">
+
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="PLACEHOLDER_API_KEY_TO_PREVENT_CRASH" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
