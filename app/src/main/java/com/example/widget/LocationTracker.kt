@@ -4,14 +4,14 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
 import com.google.android.gms.location.LocationServices
-import kotlinx.coroutines.tasks.await
+import com.google.android.gms.tasks.Tasks
 
 object LocationTracker {
     @SuppressLint("MissingPermission")
     suspend fun getCurrentLocation(context: Context): Location? {
         val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
         return try {
-            fusedLocationClient.lastLocation.await()
+            Tasks.await(fusedLocationClient.lastLocation)
         } catch (e: Exception) {
             null
         }

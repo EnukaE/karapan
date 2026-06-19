@@ -731,6 +731,8 @@ class ChecklistViewModel(
                                         checklistId = checklist.id
                                     )
                                 )
+                            } else {
+                                // No alert needed
                             }
                         }
                     }
