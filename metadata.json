@@ -1,0 +1,6 @@
+{
+  "name": "කරපන්",
+  "description": "A beautiful, persistent app for managing reusable personal checklists like class checklists, picnic preparation lists, and travel packing lists.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

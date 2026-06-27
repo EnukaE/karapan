@@ -1,0 +1,85 @@
+package com.example.data
+
+import kotlinx.coroutines.flow.Flow
+
+class ChecklistRepository(private val checklistDao: ChecklistDao) {
+
+    // --- Category methods ---
+    val allCategories: Flow<List<Category>> = checklistDao.getAllCategories()
+    
+    suspend fun insertCategory(category: Category): Long = checklistDao.insertCategory(category)
+    
+    suspend fun updateCategory(category: Category) {
+        checklistDao.updateCategory(category)
+    }
+    
+    suspend fun deleteCategory(category: Category) {
+        checklistDao.deleteCategory(category)
+    }
+
+    // --- Checklist methods ---
+    val allChecklists: Flow<List<Checklist>> = checklistDao.getAllChecklists()
+    
+    suspend fun getChecklistByIdDirect(id: Int): Checklist? = checklistDao.getChecklistByIdDirect(id)
+    
+    suspend fun insertChecklist(checklist: Checklist): Long = checklistDao.insertChecklist(checklist)
+    
+    suspend fun updateChecklist(checklist: Checklist) {
+        checklistDao.updateChecklist(checklist)
+    }
+
+    suspend fun updateChecklistsCategoryId(oldCategoryId: Int, newCategoryId: Int) {
+        checklistDao.updateChecklistsCategoryId(oldCategoryId, newCategoryId)
+    }
+    
+    suspend fun deleteChecklist(checklist: Checklist) {
+        checklistDao.deleteChecklist(checklist)
+    }
+
+    // --- Item methods ---
+    fun getItemsForChecklist(checklistId: Int): Flow<List<ChecklistItem>> {
+        return checklistDao.getItemsForChecklist(checklistId)
+    }
+    
+    suspend fun getItemsForChecklistDirect(checklistId: Int): List<ChecklistItem> {
+        return checklistDao.getItemsForChecklistDirect(checklistId)
+    }
+    
+    suspend fun insertItem(item: ChecklistItem): Long = checklistDao.insertItem(item)
+    
+    suspend fun updateItem(item: ChecklistItem) {
+        checklistDao.updateItem(item)
+    }
+    
+    suspend fun updateItems(items: List<ChecklistItem>) {
+        checklistDao.updateItems(items)
+    }
+    
+    suspend fun deleteItem(item: ChecklistItem) {
+        checklistDao.deleteItem(item)
+    }
+    
+    suspend fun updateItemCompletion(id: Int, isCompleted: Boolean) {
+        checklistDao.updateItemCompletion(id, isCompleted)
+    }
+    
+    suspend fun resetChecklistCompletion(checklistId: Int) {
+        checklistDao.resetChecklistCompletion(checklistId)
+    }
+
+    suspend fun deleteCompletedItems() {
+        checklistDao.deleteCompletedItems()
+    }
+
+    suspend fun restoreDatabase(categories: List<Category>, checklists: List<Checklist>, items: List<ChecklistItem>) {
+        checklistDao.deleteAllChecklistItems()
+        checklistDao.deleteAllChecklists()
+        checklistDao.deleteAllCategories()
+
+        categories.forEach { checklistDao.insertCategory(it) }
+        checklists.forEach { checklistDao.insertChecklist(it) }
+        items.forEach { checklistDao.insertItem(it) }
+    }
+
+    val allItems: Flow<List<ChecklistItem>> = checklistDao.getAllItems()
+}
