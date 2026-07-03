@@ -40,6 +40,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
@@ -58,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.Category
 import com.example.data.Checklist
 import com.example.data.ChecklistItem
+import com.example.data.PublicHoliday
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -167,6 +170,10 @@ fun ChecklistScreen(
         )
     }
 
+    LaunchedEffect(globalCountryCode) {
+        viewModel.syncPublicHolidaysIfNeeded(globalCountryCode)
+    }
+
     // Backup & Restore ActResult Launchers
     val createDocumentLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
@@ -204,6 +211,22 @@ fun ChecklistScreen(
 
     // Section selector: "today", "todo", "projects", "checklists"
     var selectedSection by remember { mutableStateOf("today") }
+
+    val quickAddFocusRequester = remember { FocusRequester() }
+    val triggerFocusAddTask by viewModel.triggerFocusAddTaskInput.collectAsStateWithLifecycle()
+    LaunchedEffect(triggerFocusAddTask) {
+        if (triggerFocusAddTask) {
+            selectedSection = "today"
+            // Wait slightly for composition and then request focus
+            kotlinx.coroutines.delay(100)
+            try {
+                quickAddFocusRequester.requestFocus()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            viewModel.triggerFocusAddTask(false)
+        }
+    }
 
     val screenCoroutineScope = rememberCoroutineScope()
     val checklistLazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -1046,16 +1069,23 @@ fun ChecklistScreen(
                                                 }
 
                                                 // 3. REFRESH / Reset checklist progress
-                                                IconButton(
-                                                    onClick = { showResetConfirmDialog = true },
-                                                    modifier = Modifier.size(28.dp).testTag("reset_checklist_button")
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Refresh,
-                                                        contentDescription = "Reset checklist progress",
-                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
+                                                val isActiveChecklistTasklist = remember(activeChecklist, todoCategoryId) {
+                                                    activeChecklist.categoryId == todoCategoryId || 
+                                                    activeChecklist.projectId != null || 
+                                                    activeChecklist.name == "General Todo List"
+                                                }
+                                                if (!isActiveChecklistTasklist) {
+                                                    IconButton(
+                                                        onClick = { showResetConfirmDialog = true },
+                                                        modifier = Modifier.size(28.dp).testTag("reset_checklist_button")
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Refresh,
+                                                            contentDescription = "Reset checklist progress",
+                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
                                                 }
 
                                                 // 4. DELETE current active checklist
@@ -1734,6 +1764,7 @@ fun ChecklistScreen(
                                             textStyle = MaterialTheme.typography.bodyMedium,
                                             modifier = Modifier
                                                 .weight(1f)
+                                                .focusRequester(quickAddFocusRequester)
                                                 .testTag("new_item_input")
                                         )
 
@@ -4216,38 +4247,44 @@ fun ChecklistScreen(
                 }
             )
         }
+    }
 
-        val hyperfocusItemsForZone = remember(allItems, selectedSection, currentItems, todayChecklist, todoChecklist) {
-            when (selectedSection) {
-                "today" -> {
-                    val todayId = todayChecklist?.id
-                    if (todayId != null) {
-                        val today = allItems.filter { it.checklistId == todayId }
-                        val synced = allItems.filter { it.checklistId != todayId && it.isAddedToToday }
-                        today + synced
-                    } else emptyList()
-                }
-                "todo" -> {
-                    val todoId = todoChecklist?.id
-                    if (todoId != null) {
-                        allItems.filter { it.checklistId == todoId }
-                    } else emptyList()
-                }
-                "checklists" -> currentItems
-                else -> currentItems
+    val hyperfocusItemsForZone = remember(allItems, selectedSection, currentItems, todayChecklist, todoChecklist) {
+        when (selectedSection) {
+            "today" -> {
+                val todayId = todayChecklist?.id
+                if (todayId != null) {
+                    val today = allItems.filter { it.checklistId == todayId }
+                    val synced = allItems.filter { it.checklistId != todayId && it.isAddedToToday }
+                    val external = allItems.filter { 
+                        it.checklistId != todayId && 
+                        !it.isAddedToToday && 
+                        !it.isCompleted &&
+                        viewModel.isScheduledTimeReachedForItem(it, System.currentTimeMillis())
+                    }
+                    today + synced + external
+                } else emptyList()
             }
+            "todo" -> {
+                val todoId = todoChecklist?.id
+                if (todoId != null) {
+                    allItems.filter { it.checklistId == todoId }
+                } else emptyList()
+            }
+            "checklists" -> currentItems
+            else -> currentItems
         }
+    }
 
-        if (isHyperfocusActive) {
-            HyperfocusModeDialog(
-                isActive = isHyperfocusActive,
-                onDismiss = { isHyperfocusActive = false },
-                items = hyperfocusItemsForZone,
-                onToggleCompletion = { item ->
-                    viewModel.toggleItemCompletion(item)
-                }
-            )
-        }
+    if (isHyperfocusActive) {
+        HyperfocusModeDialog(
+            isActive = isHyperfocusActive,
+            onDismiss = { isHyperfocusActive = false },
+            items = hyperfocusItemsForZone,
+            onToggleCompletion = { item ->
+                viewModel.toggleItemCompletion(item)
+            }
+        )
     }
 
     // Wizard/Dialog for Checklist Creation
@@ -9304,7 +9341,8 @@ fun HyperfocusModeDialog(
     } else null
 
     Dialog(
-        onDismissRequest = onDismiss
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Box(
             modifier = Modifier
@@ -10935,8 +10973,29 @@ fun CompletedTasksView(
     onDelete: (ChecklistItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val completedItems = remember(allItems) {
-        allItems.filter { it.isCompleted }
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val completedItems = remember(allItems, checklists, categories) {
+        val projectsCategory = categories.find { it.name.lowercase().trim() == "projects" }
+        val projectsCategoryId = projectsCategory?.id
+
+        val todoCategory = categories.find { it.name.lowercase().trim() == "tasks & todo" || it.name.lowercase().trim() == "todo" }
+        val todoCategoryId = todoCategory?.id
+
+        val todayChecklist = checklists.find { it.name == "Today's Focus Tasks" }
+        val ideaChecklist = checklists.find { it.name == "Bright Ideas Sandbox" }
+
+        allItems.filter { item ->
+            if (!item.isCompleted) return@filter false
+            val parentChecklist = checklists.find { it.id == item.checklistId } ?: return@filter true
+            
+            val isStandardChecklist = parentChecklist.id != todayChecklist?.id &&
+                    parentChecklist.id != ideaChecklist?.id &&
+                    parentChecklist.categoryId != projectsCategoryId &&
+                    (todoCategoryId == null || parentChecklist.categoryId != todoCategoryId) &&
+                    parentChecklist.name != "General Todo List"
+
+            !isStandardChecklist
+        }
     }
 
     Column(
@@ -11246,13 +11305,16 @@ fun ScheduledAgendaView(
         list
     }
 
+    var calendarYear by remember { mutableStateOf(Calendar.getInstance().get(Calendar.YEAR)) }
+    var calendarMonth by remember { mutableStateOf(Calendar.getInstance().get(Calendar.MONTH)) } // 0-indexed
+
     // 3. Monthly Calendar Days Generation
-    val calendarDays = remember {
-        val cal = Calendar.getInstance()
-        val currentYear = cal.get(Calendar.YEAR)
-        val currentMonth = cal.get(Calendar.MONTH)
-        
-        cal.set(Calendar.DAY_OF_MONTH, 1)
+    val calendarDays = remember(calendarYear, calendarMonth) {
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.YEAR, calendarYear)
+            set(Calendar.MONTH, calendarMonth)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }
         val startDayOfWeek = cal.get(Calendar.DAY_OF_WEEK) // 1 = Sun, 2 = Mon, etc.
         val maxDays = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
         
@@ -11277,9 +11339,9 @@ fun ScheduledAgendaView(
     var showCountryDropdown by remember { mutableStateOf(false) }
     var showCustomCountryDialog by remember { mutableStateOf(false) }
 
-    var holidaysList by remember { mutableStateOf<List<PublicHoliday>>(emptyList()) }
-    var isFetchingHolidays by remember { mutableStateOf(false) }
-    var holidayFetchError by remember { mutableStateOf<String?>(null) }
+    val holidaysList by viewModel.holidaysList.collectAsStateWithLifecycle()
+    val isFetchingHolidays by viewModel.isFetchingHolidays.collectAsStateWithLifecycle()
+    val holidayFetchError by viewModel.holidayFetchError.collectAsStateWithLifecycle()
 
     val countriesMap = remember {
         linkedMapOf(
@@ -11302,20 +11364,8 @@ fun ScheduledAgendaView(
         )
     }
 
-    LaunchedEffect(selectedCountryCode) {
-        isFetchingHolidays = true
-        holidayFetchError = null
-        withContext(Dispatchers.IO) {
-            val year = Calendar.getInstance().get(Calendar.YEAR)
-            val fetched = fetchPublicHolidays(year, selectedCountryCode)
-            if (fetched.isNotEmpty()) {
-                holidaysList = fetched
-                holidayFetchError = null
-            } else {
-                holidayFetchError = "Could not fetch holidays for $selectedCountryCode."
-            }
-            isFetchingHolidays = false
-        }
+    LaunchedEffect(selectedCountryCode, calendarYear) {
+        viewModel.syncPublicHolidaysIfNeeded(selectedCountryCode, calendarYear)
     }
 
     // 5. Apply Filtering Based on Selected Day/Date
@@ -11473,8 +11523,11 @@ fun ScheduledAgendaView(
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
                     .padding(12.dp)
             ) {
-                val headerText = remember {
-                    val cal = Calendar.getInstance()
+                val headerText = remember(calendarYear, calendarMonth) {
+                    val cal = Calendar.getInstance().apply {
+                        set(Calendar.YEAR, calendarYear)
+                        set(Calendar.MONTH, calendarMonth)
+                    }
                     val sdf = java.text.SimpleDateFormat("MMMM yyyy", Locale.getDefault())
                     sdf.format(cal.time)
                 }
@@ -11505,11 +11558,56 @@ fun ScheduledAgendaView(
                             "CH" -> "🇨🇭"
                             else -> "🏳️"
                         }
-                        Text(
-                            text = "$headerText ($countryEmoji $selectedCountryCode)",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    if (calendarMonth == 0) {
+                                        calendarMonth = 11
+                                        calendarYear -= 1
+                                    } else {
+                                        calendarMonth -= 1
+                                    }
+                                    selectedDateMillis = null
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowLeft,
+                                    contentDescription = "Previous Month",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            
+                            Text(
+                                text = "$headerText ($countryEmoji $selectedCountryCode)",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            
+                            IconButton(
+                                onClick = {
+                                    if (calendarMonth == 11) {
+                                        calendarMonth = 0
+                                        calendarYear += 1
+                                    } else {
+                                        calendarMonth += 1
+                                    }
+                                    selectedDateMillis = null
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowRight,
+                                    contentDescription = "Next Month",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        
                         if (selectedDateMillis != null) {
                             TextButton(
                                 onClick = { selectedDateMillis = null },
@@ -11525,11 +11623,10 @@ fun ScheduledAgendaView(
                     } else if (holidayFetchError != null) {
                         "Error loading holidays"
                     } else {
-                        val countHolidaysInMonth = remember(holidaysList) {
-                            val cal = Calendar.getInstance()
-                            val curMonth = cal.get(Calendar.MONTH) + 1
-                            val curMonthStr = if (curMonth < 10) "0$curMonth" else "$curMonth"
-                            holidaysList.count { it.date.contains("-$curMonthStr-") }
+                        val countHolidaysInMonth = remember(holidaysList, calendarYear, calendarMonth) {
+                            val targetMonth = calendarMonth + 1
+                            val curMonthStr = if (targetMonth < 10) "0$targetMonth" else "$targetMonth"
+                            holidaysList.count { it.date.contains("-$curMonthStr-") && it.date.startsWith("$calendarYear") }
                         }
                         "$countHolidaysInMonth holidays this month"
                     }
@@ -11957,12 +12054,7 @@ fun ScheduledAgendaView(
     }
 }
 
-data class PublicHoliday(
-    val date: String,       // "yyyy-MM-dd"
-    val localName: String,
-    val name: String,
-    val countryCode: String
-)
+
 
 fun fetchPublicHolidays(year: Int, countryCode: String): List<PublicHoliday> {
     val resultList = mutableListOf<PublicHoliday>()

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.Category
 import com.example.data.Checklist
 import com.example.data.ChecklistItem
+import com.example.data.PublicHoliday
 import com.example.data.ChecklistRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -29,6 +30,125 @@ class ChecklistViewModel(
     private val repository: ChecklistRepository,
     private val context: android.content.Context
 ) : ViewModel() {
+
+    // --- Automatic Holiday Calendar Sync Engine ---
+    private val _holidaysList = MutableStateFlow<List<PublicHoliday>>(emptyList())
+    val holidaysList: StateFlow<List<PublicHoliday>> = _holidaysList.asStateFlow()
+
+    private val _isFetchingHolidays = MutableStateFlow(false)
+    val isFetchingHolidays: StateFlow<Boolean> = _isFetchingHolidays.asStateFlow()
+
+    private val _holidayFetchError = MutableStateFlow<String?>(null)
+    val holidayFetchError: StateFlow<String?> = _holidayFetchError.asStateFlow()
+
+    private var lastFetchedCountryAndYear = ""
+
+    private val _triggerFocusAddTaskInput = MutableStateFlow(false)
+    val triggerFocusAddTaskInput: StateFlow<Boolean> = _triggerFocusAddTaskInput.asStateFlow()
+
+    fun triggerFocusAddTask(focus: Boolean) {
+        _triggerFocusAddTaskInput.value = focus
+    }
+
+    fun syncPublicHolidaysIfNeeded(countryCode: String, year: Int = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) {
+        val cacheKey = "$countryCode-$year"
+        if (lastFetchedCountryAndYear == cacheKey && _holidaysList.value.isNotEmpty()) {
+            return
+        }
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFetchingHolidays.value = true
+            _holidayFetchError.value = null
+            
+            val fetched = fetchPublicHolidaysFromApi(year, countryCode)
+            if (fetched.isNotEmpty()) {
+                _holidaysList.value = fetched
+                _holidayFetchError.value = null
+                lastFetchedCountryAndYear = cacheKey
+            } else {
+                _holidayFetchError.value = "Could not sync holidays for $countryCode automatically."
+            }
+            _isFetchingHolidays.value = false
+        }
+    }
+
+    private fun fetchPublicHolidaysFromApi(year: Int, countryCode: String): List<PublicHoliday> {
+        val resultList = mutableListOf<PublicHoliday>()
+        try {
+            val url = java.net.URL("https://date.nager.at/api/v3/publicholidays/$year/$countryCode")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            
+            if (conn.responseCode == 200) {
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream))
+                val sb = java.lang.StringBuilder()
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    sb.append(line)
+                }
+                reader.close()
+                
+                val jsonArray = org.json.JSONArray(sb.toString())
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    resultList.add(
+                        PublicHoliday(
+                            date = obj.optString("date", ""),
+                            localName = obj.optString("localName", ""),
+                            name = obj.optString("name", ""),
+                            countryCode = obj.optString("countryCode", "")
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        if (resultList.isEmpty()) {
+            val codeUpper = countryCode.uppercase()
+            when (codeUpper) {
+                "LK" -> {
+                    resultList.add(PublicHoliday("$year-01-14", "Tamil Thai Pongal Day", "Tamil Thai Pongal Day", "LK"))
+                    resultList.add(PublicHoliday("$year-01-23", "Duruthu Full Moon Poya Day", "Duruthu Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-02-04", "National Day", "National Day / Independence Day", "LK"))
+                    resultList.add(PublicHoliday("$year-02-22", "Navam Full Moon Poya Day", "Navam Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-03-08", "Mahasivarathri Day", "Mahasivarathri Day", "LK"))
+                    resultList.add(PublicHoliday("$year-03-24", "Medin Full Moon Poya Day", "Medin Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-04-13", "Sinhala and Tamil New Year Eve", "Sinhala & Tamil New Year Eve", "LK"))
+                    resultList.add(PublicHoliday("$year-04-14", "Sinhala and Tamil New Year Day", "Sinhala & Tamil New Year Day", "LK"))
+                    resultList.add(PublicHoliday("$year-04-23", "Bak Full Moon Poya Day", "Bak Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-05-01", "May Day", "May Day", "LK"))
+                    resultList.add(PublicHoliday("$year-05-24", "Vesak Full Moon Poya Day", "Vesak Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-06-21", "Poson Full Moon Poya Day", "Poson Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-07-20", "Esala Full Moon Poya Day", "Esala Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-08-19", "Nikini Full Moon Poya Day", "Nikini Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-09-17", "Binara Full Moon Poya Day", "Binara Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-10-16", "Vap Full Moon Poya Day", "Vap Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-10-31", "Deepavali Festival Day", "Deepavali Festival Day", "LK"))
+                    resultList.add(PublicHoliday("$year-11-14", "Il Full Moon Poya Day", "Il Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-12-14", "Unduvap Full Moon Poya Day", "Unduvap Full Moon Poya Day", "LK"))
+                    resultList.add(PublicHoliday("$year-12-25", "Christmas Day", "Christmas Day", "LK"))
+                }
+                "IN" -> {
+                    resultList.add(PublicHoliday("$year-01-26", "Republic Day", "Republic Day", "IN"))
+                    resultList.add(PublicHoliday("$year-08-15", "Independence Day", "Independence Day", "IN"))
+                    resultList.add(PublicHoliday("$year-10-02", "Gandhi Jayanti", "Gandhi Jayanti", "IN"))
+                    resultList.add(PublicHoliday("$year-11-01", "Diwali", "Diwali / Deepavali", "IN"))
+                    resultList.add(PublicHoliday("$year-12-25", "Christmas Day", "Christmas Day", "IN"))
+                }
+                "US" -> {
+                    resultList.add(PublicHoliday("$year-01-01", "New Year's Day", "New Year's Day", "US"))
+                    resultList.add(PublicHoliday("$year-07-04", "Independence Day", "Independence Day", "US"))
+                    resultList.add(PublicHoliday("$year-11-26", "Thanksgiving", "Thanksgiving Day", "US"))
+                    resultList.add(PublicHoliday("$year-12-25", "Christmas Day", "Christmas Day", "US"))
+                }
+            }
+        }
+        return resultList
+    }
 
     // --- State Expositions ---
     val categories: StateFlow<List<Category>> = repository.allCategories
@@ -1383,7 +1503,35 @@ class ChecklistViewModel(
 
     fun clearAllCompletedItems() {
         viewModelScope.launch {
-            repository.deleteCompletedItems()
+            val items = allItems.value
+            val lists = checklists.value
+            val cats = categories.value
+
+            val projectsCategory = cats.find { it.name.lowercase().trim() == "projects" }
+            val projectsCategoryId = projectsCategory?.id
+
+            val todoCategory = cats.find { it.name.lowercase().trim() == "tasks & todo" || it.name.lowercase().trim() == "todo" }
+            val todoCategoryId = todoCategory?.id
+
+            val todayChecklist = lists.find { it.name == "Today's Focus Tasks" }
+            val ideaChecklist = lists.find { it.name == "Bright Ideas Sandbox" }
+
+            val itemsToDelete = items.filter { item ->
+                if (!item.isCompleted) return@filter false
+                val parentChecklist = lists.find { it.id == item.checklistId } ?: return@filter true
+                
+                val isStandardChecklist = parentChecklist.id != todayChecklist?.id &&
+                        parentChecklist.id != ideaChecklist?.id &&
+                        parentChecklist.categoryId != projectsCategoryId &&
+                        (todoCategoryId == null || parentChecklist.categoryId != todoCategoryId) &&
+                        parentChecklist.name != "General Todo List"
+
+                !isStandardChecklist
+            }
+
+            if (itemsToDelete.isNotEmpty()) {
+                repository.deleteItems(itemsToDelete)
+            }
             updateReminderSystem()
         }
     }

@@ -6,7 +6,7 @@
     android:orientation="vertical"
     android:padding="12dp">
 
-    <!-- Header -->
+    <!-- Header Block -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -16,13 +16,13 @@
 
         <TextView
             android:id="@+id/widget_title"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="📅 Today's Focus"
+            android:text="🎯 Focus Today"
             android:textColor="#FFFFFF"
             android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:layout_marginEnd="6dp" />
 
         <TextView
             android:id="@+id/widget_count"
@@ -37,9 +37,38 @@
             android:textColor="#1B5E20"
             android:textSize="9sp"
             android:textStyle="bold" />
+
+        <!-- Spacer to push actions to the right (Using FrameLayout which is RemoteViews safe) -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- Action Buttons -->
+        <TextView
+            android:id="@+id/widget_btn_refresh"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:gravity="center"
+            android:text="🔄"
+            android:textSize="14sp"
+            android:layout_marginEnd="4dp"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <TextView
+            android:id="@+id/widget_btn_add"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:gravity="center"
+            android:text="➕"
+            android:textSize="14sp"
+            android:clickable="true"
+            android:focusable="true"/>
     </LinearLayout>
 
-    <View
+    <!-- Header Divider Line -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="#2E3E34"
@@ -55,7 +84,8 @@
         android:textColor="#81C784"
         android:textSize="11sp"
         android:visibility="gone"
-        android:layout_marginTop="12dp"/>
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"/>
 
     <!-- Items container -->
     <LinearLayout
@@ -71,14 +101,19 @@
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingTop="3dp"
-            android:paddingBottom="3dp">
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:clickable="true"
+            android:focusable="true">
             <TextView
+                android:id="@+id/widget_item_check_1"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▪ "
+                android:text="○"
                 android:textColor="#81C784"
-                android:textSize="14sp"/>
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:paddingEnd="6dp"/>
             <TextView
                 android:id="@+id/widget_item_text_1"
                 android:layout_width="match_parent"
@@ -97,14 +132,19 @@
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingTop="3dp"
-            android:paddingBottom="3dp">
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:clickable="true"
+            android:focusable="true">
             <TextView
+                android:id="@+id/widget_item_check_2"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▪ "
+                android:text="○"
                 android:textColor="#81C784"
-                android:textSize="14sp"/>
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:paddingEnd="6dp"/>
             <TextView
                 android:id="@+id/widget_item_text_2"
                 android:layout_width="match_parent"
@@ -123,14 +163,19 @@
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingTop="3dp"
-            android:paddingBottom="3dp">
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:clickable="true"
+            android:focusable="true">
             <TextView
+                android:id="@+id/widget_item_check_3"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▪ "
+                android:text="○"
                 android:textColor="#81C784"
-                android:textSize="14sp"/>
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:paddingEnd="6dp"/>
             <TextView
                 android:id="@+id/widget_item_text_3"
                 android:layout_width="match_parent"
@@ -149,16 +194,52 @@
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingTop="3dp"
-            android:paddingBottom="3dp">
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:clickable="true"
+            android:focusable="true">
             <TextView
+                android:id="@+id/widget_item_check_4"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▪ "
+                android:text="○"
                 android:textColor="#81C784"
-                android:textSize="14sp"/>
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:paddingEnd="6dp"/>
             <TextView
                 android:id="@+id/widget_item_text_4"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="No task"
+                android:textColor="#E0E0E0"
+                android:textSize="11sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
+        </LinearLayout>
+
+        <!-- Item 5 -->
+        <LinearLayout
+            android:id="@+id/widget_item_row_5"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:clickable="true"
+            android:focusable="true">
+            <TextView
+                android:id="@+id/widget_item_check_5"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="○"
+                android:textColor="#81C784"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:paddingEnd="6dp"/>
+            <TextView
+                android:id="@+id/widget_item_text_5"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="No task"

@@ -57,6 +57,9 @@ interface ChecklistDao {
     @Delete
     suspend fun deleteItem(item: ChecklistItem)
 
+    @Delete
+    suspend fun deleteItems(items: List<ChecklistItem>)
+
     @Query("UPDATE checklist_items SET isCompleted = :isCompleted WHERE id = :id")
     suspend fun updateItemCompletion(id: Int, isCompleted: Boolean)
 

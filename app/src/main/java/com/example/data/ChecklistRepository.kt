@@ -58,6 +58,10 @@ class ChecklistRepository(private val checklistDao: ChecklistDao) {
     suspend fun deleteItem(item: ChecklistItem) {
         checklistDao.deleteItem(item)
     }
+
+    suspend fun deleteItems(items: List<ChecklistItem>) {
+        checklistDao.deleteItems(items)
+    }
     
     suspend fun updateItemCompletion(id: Int, isCompleted: Boolean) {
         checklistDao.updateItemCompletion(id, isCompleted)

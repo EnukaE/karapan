@@ -1,7 +1,6 @@
 package com.example.widget
 
 import android.app.PendingIntent
-import android.app.TaskStackBuilder
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
@@ -12,7 +11,6 @@ import android.widget.RemoteViews
 import com.example.MainActivity
 import com.example.R
 import com.example.data.ChecklistDatabase
-import com.example.data.ChecklistItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -29,18 +27,47 @@ class TodayWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == ACTION_WIDGET_REFRESH) {
-            val appWidgetManager = AppWidgetManager.getInstance(context)
-            val componentName = ComponentName(context, TodayWidgetProvider::class.java)
-            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-            for (appWidgetId in appWidgetIds) {
-                updateWidget(context, appWidgetManager, appWidgetId)
+        when (intent.action) {
+            ACTION_WIDGET_REFRESH -> {
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                val componentName = ComponentName(context, TodayWidgetProvider::class.java)
+                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+                for (appWidgetId in appWidgetIds) {
+                    updateWidget(context, appWidgetManager, appWidgetId)
+                }
+            }
+            ACTION_TOGGLE_ITEM -> {
+                val itemId = intent.getIntExtra(EXTRA_ITEM_ID, -1)
+                val currentStatus = intent.getBooleanExtra(EXTRA_CURRENT_STATUS, false)
+                if (itemId != -1) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            val database = ChecklistDatabase.getDatabase(context)
+                            val dao = database.checklistDao()
+                            // Toggle item completion in DB
+                            dao.updateItemCompletion(itemId, !currentStatus)
+                            
+                            // Immediately broadcast widget update
+                            val appWidgetManager = AppWidgetManager.getInstance(context)
+                            val componentName = ComponentName(context, TodayWidgetProvider::class.java)
+                            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+                            for (appWidgetId in appWidgetIds) {
+                                updateWidget(context, appWidgetManager, appWidgetId)
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
             }
         }
     }
 
     companion object {
         const val ACTION_WIDGET_REFRESH = "com.example.widget.ACTION_REFRESH"
+        const val ACTION_TOGGLE_ITEM = "com.example.widget.ACTION_TOGGLE_ITEM"
+        const val EXTRA_ITEM_ID = "com.example.widget.EXTRA_ITEM_ID"
+        const val EXTRA_CURRENT_STATUS = "com.example.widget.EXTRA_CURRENT_STATUS"
 
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
             CoroutineScope(Dispatchers.IO).launch {
@@ -48,7 +75,7 @@ class TodayWidgetProvider : AppWidgetProvider() {
                     val database = ChecklistDatabase.getDatabase(context)
                     val dao = database.checklistDao()
 
-                    // Fetch all items from DB
+                    // Fetch items from database
                     val allItems = dao.getAllItems().first()
                     val checklists = dao.getAllChecklists().first()
 
@@ -93,14 +120,35 @@ class TodayWidgetProvider : AppWidgetProvider() {
                         views.setViewVisibility(R.id.widget_empty_text, View.GONE)
                         views.setViewVisibility(R.id.widget_items_container, View.VISIBLE)
 
-                        // Populate rows (max 4)
-                        val rowIds = arrayOf(R.id.widget_item_row_1, R.id.widget_item_row_2, R.id.widget_item_row_3, R.id.widget_item_row_4)
-                        val textIds = arrayOf(R.id.widget_item_text_1, R.id.widget_item_text_2, R.id.widget_item_text_3, R.id.widget_item_text_4)
+                        // Populate rows (max 5)
+                        val rowIds = arrayOf(
+                            R.id.widget_item_row_1,
+                            R.id.widget_item_row_2,
+                            R.id.widget_item_row_3,
+                            R.id.widget_item_row_4,
+                            R.id.widget_item_row_5
+                        )
+                        val checkIds = arrayOf(
+                            R.id.widget_item_check_1,
+                            R.id.widget_item_check_2,
+                            R.id.widget_item_check_3,
+                            R.id.widget_item_check_4,
+                            R.id.widget_item_check_5
+                        )
+                        val textIds = arrayOf(
+                            R.id.widget_item_text_1,
+                            R.id.widget_item_text_2,
+                            R.id.widget_item_text_3,
+                            R.id.widget_item_text_4,
+                            R.id.widget_item_text_5
+                        )
 
-                        for (i in 0 until 4) {
+                        for (i in 0 until 5) {
                             if (i < combinedTodayList.size) {
+                                val item = combinedTodayList[i]
                                 views.setViewVisibility(rowIds[i], View.VISIBLE)
-                                var cleanText = combinedTodayList[i].text
+                                
+                                var cleanText = item.text
                                 if (cleanText.startsWith("[CL_SHORTCUT:")) {
                                     val bracketIdx = cleanText.indexOf("]")
                                     if (bracketIdx != -1) {
@@ -117,26 +165,66 @@ class TodayWidgetProvider : AppWidgetProvider() {
                                         cleanText = "💬 " + cleanText.substring(bracketIdx + 1).trim()
                                     }
                                 }
+                                
                                 views.setTextViewText(textIds[i], cleanText)
+                                views.setTextViewText(checkIds[i], if (item.isCompleted) "☑ " else "○ ")
+
+                                // Click action to toggle item completion directly from widget
+                                val toggleIntent = Intent(context, TodayWidgetProvider::class.java).apply {
+                                    action = ACTION_TOGGLE_ITEM
+                                    putExtra(EXTRA_ITEM_ID, item.id)
+                                    putExtra(EXTRA_CURRENT_STATUS, item.isCompleted)
+                                }
+                                val togglePendingIntent = PendingIntent.getBroadcast(
+                                    context,
+                                    item.id,
+                                    toggleIntent,
+                                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                                )
+                                views.setOnClickPendingIntent(rowIds[i], togglePendingIntent)
                             } else {
                                 views.setViewVisibility(rowIds[i], View.GONE)
                             }
                         }
                     }
 
-                    // Click pending intent to open app
-                    val clickIntent = Intent(context, MainActivity::class.java).apply {
+                    // Intent to open Main App
+                    val openAppIntent = Intent(context, MainActivity::class.java).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     }
-                    val pendingIntent = PendingIntent.getActivity(
+                    val openAppPendingIntent = PendingIntent.getActivity(
                         context,
                         0,
-                        clickIntent,
+                        openAppIntent,
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
-                    views.setOnClickPendingIntent(R.id.widget_title, pendingIntent)
-                    views.setOnClickPendingIntent(R.id.widget_empty_text, pendingIntent)
-                    views.setOnClickPendingIntent(R.id.widget_items_container, pendingIntent)
+                    views.setOnClickPendingIntent(R.id.widget_title, openAppPendingIntent)
+                    views.setOnClickPendingIntent(R.id.widget_empty_text, openAppPendingIntent)
+
+                    // Intent to trigger manual widget refresh
+                    val refreshIntent = Intent(context, TodayWidgetProvider::class.java).apply {
+                        action = ACTION_WIDGET_REFRESH
+                    }
+                    val refreshPendingIntent = PendingIntent.getBroadcast(
+                        context,
+                        101,
+                        refreshIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    views.setOnClickPendingIntent(R.id.widget_btn_refresh, refreshPendingIntent)
+
+                    // Intent to open Main App and focus quick add task field
+                    val quickAddIntent = Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        putExtra("focus_add_task", true)
+                    }
+                    val quickAddPendingIntent = PendingIntent.getActivity(
+                        context,
+                        102,
+                        quickAddIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    views.setOnClickPendingIntent(R.id.widget_btn_add, quickAddPendingIntent)
 
                     appWidgetManager.updateAppWidget(appWidgetId, views)
                 } catch (e: Exception) {

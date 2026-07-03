@@ -75,6 +75,11 @@ class MainActivity : ComponentActivity() {
             registerReceiver(dismissReceiver, filter)
         }
 
+        // Handle quick-add intent extra from widget
+        if (intent?.getBooleanExtra("focus_add_task", false) == true) {
+            viewModel.triggerFocusAddTask(true)
+        }
+
         setContent {
             MyApplicationTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -84,6 +89,14 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("focus_add_task", false) == true) {
+            viewModel.triggerFocusAddTask(true)
         }
     }
 
