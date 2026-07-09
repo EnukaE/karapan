@@ -124,6 +124,10 @@ fun ChecklistScreen(
     var showListSettingsDialog by remember { mutableStateOf(false) }
     var showEditDetailsDialog by remember { mutableStateOf(false) }
 
+    // Rearrange Mode states
+    var isRearrangeModeActive by remember { mutableStateOf(false) }
+    var rearrangeTapSequence by remember { mutableStateOf<List<Int>>(emptyList()) }
+
     // Simulated Location Selector Dialog
     var showSimulatedLocationDialog by remember { mutableStateOf(false) }
 
@@ -212,6 +216,11 @@ fun ChecklistScreen(
     // Section selector: "today", "todo", "projects", "checklists"
     var selectedSection by remember { mutableStateOf("today") }
 
+    LaunchedEffect(selectedChecklistId, selectedSection) {
+        isRearrangeModeActive = false
+        rearrangeTapSequence = emptyList()
+    }
+
     val quickAddFocusRequester = remember { FocusRequester() }
     val triggerFocusAddTask by viewModel.triggerFocusAddTaskInput.collectAsStateWithLifecycle()
     LaunchedEffect(triggerFocusAddTask) {
@@ -239,7 +248,7 @@ fun ChecklistScreen(
     }
 
     LaunchedEffect(selectedSection) {
-        val todoChecklistTemp = checklists.find { it.name == "General Todo List" }
+        val todoChecklistTemp = checklists.find { it.name == "General" || it.name == "General Todo List" }
         val todoItemsTemp = if (todoChecklistTemp == null) emptyList() else allItems.filter { it.checklistId == todoChecklistTemp.id }
         if (selectedSection == "todo" && todoItemsTemp.isNotEmpty()) {
             todoLazyListState.scrollToItem(0)
@@ -283,10 +292,10 @@ fun ChecklistScreen(
     val projectsCategory = categories.find { it.name.lowercase().trim() == "projects" }
     val projectsCategoryId = projectsCategory?.id
 
-    val todoCategory = categories.find { it.name.lowercase().trim() == "tasks & todo" || it.name.lowercase().trim() == "todo" }
+    val todoCategory = categories.find { it.name.lowercase().trim() == "general" || it.name.lowercase().trim() == "tasks & todo" || it.name.lowercase().trim() == "todo" }
     val todoCategoryId = todoCategory?.id
 
-    val todoChecklist = checklists.find { it.name == "General Todo List" }
+    val todoChecklist = checklists.find { it.name == "General" || it.name == "General Todo List" }
     val todayChecklist = checklists.find { it.name == "Today's Focus Tasks" }
     val ideaChecklist = checklists.find { it.name == "Bright Ideas Sandbox" }
     val todayItems = remember(allItems, todayChecklist) {
@@ -305,7 +314,7 @@ fun ChecklistScreen(
 
     val todoChecklists = remember(checklists, todoCategoryId, orderMap) {
         checklists.filter { 
-            (it.categoryId == todoCategoryId || (it.name == "General Todo List" && todoCategoryId == null)) && 
+            (it.categoryId == todoCategoryId || ((it.name == "General" || it.name == "General Todo List") && todoCategoryId == null)) && 
             it.id != todayChecklist?.id && 
             it.id != ideaChecklist?.id &&
             (it.projectId == null || it.isVisibleInTaskListSec)
@@ -742,6 +751,40 @@ fun ChecklistScreen(
                                 checklists = checklists,
                                 categories = categories,
                                 isKeyboardVisible = isKeyboardVisible,
+                                isRearrangeModeActive = isRearrangeModeActive,
+                                rearrangeTapSequence = rearrangeTapSequence,
+                                onRearrangeTap = { item ->
+                                    rearrangeTapSequence = if (item.id in rearrangeTapSequence) {
+                                        rearrangeTapSequence - item.id
+                                    } else {
+                                        rearrangeTapSequence + item.id
+                                    }
+                                },
+                                onToggleRearrangeMode = {
+                                    if (isRearrangeModeActive) {
+                                        if (rearrangeTapSequence.isNotEmpty()) {
+                                            val todayItems = allItems.filter { it.checklistId == todayChecklist?.id }
+                                            val reorderedItems = mutableListOf<ChecklistItem>()
+                                            rearrangeTapSequence.forEach { id ->
+                                                todayItems.find { it.id == id }?.let { reorderedItems.add(it) }
+                                            }
+                                            todayItems.forEach { item ->
+                                                if (item.id !in rearrangeTapSequence) {
+                                                    reorderedItems.add(item)
+                                                }
+                                            }
+                                            val updatedItems = reorderedItems.mapIndexed { index, item ->
+                                                item.copy(position = index)
+                                            }
+                                            viewModel.updateItemPositions(updatedItems)
+                                        }
+                                        isRearrangeModeActive = false
+                                        rearrangeTapSequence = emptyList()
+                                    } else {
+                                        isRearrangeModeActive = true
+                                        rearrangeTapSequence = emptyList()
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth().weight(1f)
                             )
                         }
@@ -1013,6 +1056,46 @@ fun ChecklistScreen(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
+                                                 // REARRANGE ITEMS
+                                                 IconButton(
+                                                     onClick = {
+                                                         if (isRearrangeModeActive) {
+                                                             if (rearrangeTapSequence.isNotEmpty()) {
+                                                                 val reorderedItems = mutableListOf<ChecklistItem>()
+                                                                 rearrangeTapSequence.forEach { id ->
+                                                                     currentItems.find { it.id == id }?.let { reorderedItems.add(it) }
+                                                                 }
+                                                                 currentItems.forEach { item ->
+                                                                     if (item.id !in rearrangeTapSequence) {
+                                                                         reorderedItems.add(item)
+                                                                     }
+                                                                 }
+                                                                 val updatedItems = reorderedItems.mapIndexed { index, item ->
+                                                                     item.copy(position = index)
+                                                                 }
+                                                                 viewModel.updateItemPositions(updatedItems)
+                                                             }
+                                                             isRearrangeModeActive = false
+                                                             rearrangeTapSequence = emptyList()
+                                                         } else {
+                                                             isRearrangeModeActive = true
+                                                             rearrangeTapSequence = emptyList()
+                                                         }
+                                                     },
+                                                     modifier = Modifier
+                                                         .size(28.dp)
+                                                         .background(
+                                                             color = if (isRearrangeModeActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                                             shape = CircleShape
+                                                         )
+                                                         .testTag("list_rearrange_button")
+                                                 ) {
+                                                     BeautifulSwapVertIcon(
+                                                         tint = if (isRearrangeModeActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                         modifier = Modifier.size(16.dp)
+                                                     )
+                                                 }
+
                                                 // 0. TODAY SHORTCUT (STAR/PIN LINK)
                                                 val hasActiveTodayShortcut = remember(todayItems, activeChecklist.id) {
                                                     todayItems.any { it.text.startsWith("[CL_SHORTCUT:${activeChecklist.id}]") }
@@ -1072,7 +1155,7 @@ fun ChecklistScreen(
                                                 val isActiveChecklistTasklist = remember(activeChecklist, todoCategoryId) {
                                                     activeChecklist.categoryId == todoCategoryId || 
                                                     activeChecklist.projectId != null || 
-                                                    activeChecklist.name == "General Todo List"
+                                                    activeChecklist.name == "General" || activeChecklist.name == "General Todo List"
                                                 }
                                                 if (!isActiveChecklistTasklist) {
                                                     IconButton(
@@ -1661,7 +1744,16 @@ fun ChecklistScreen(
                                                 onDeactivateAlarm = { itemToDeactivateAlarm = item },
                                                 onToggleAddedToToday = if (activeChecklist?.id != todayChecklist?.id) {
                                                     { viewModel.toggleItemAddedToToday(item) }
-                                                } else null
+                                                } else null,
+                                                isRearrangeModeActive = isRearrangeModeActive,
+                                                rearrangeTapSequence = rearrangeTapSequence,
+                                                onRearrangeTap = {
+                                                    rearrangeTapSequence = if (item.id in rearrangeTapSequence) {
+                                                        rearrangeTapSequence - item.id
+                                                    } else {
+                                                        rearrangeTapSequence + item.id
+                                                    }
+                                                }
                                             )
                                         }
                                     }
@@ -3774,6 +3866,7 @@ fun ChecklistScreen(
         var showTimePickerForItem by remember { mutableStateOf(false) }
         val item = editingItem!!
         var itemTextInput by remember { mutableStateOf(item.text) }
+        var targetChecklistId by remember { mutableStateOf(item.checklistId) }
         var isAllDay by remember { mutableStateOf(item.isAllDay) }
         var repeatInterval by remember { mutableStateOf(item.repeatInterval ?: "none") }
         
@@ -3818,6 +3911,78 @@ fun ChecklistScreen(
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Text(
+                        text = "Assign to Task List",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    var isChecklistDropdownExpanded by remember { mutableStateOf(false) }
+                    val currentAssignedChecklist = checklists.find { it.id == targetChecklistId }
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+                            onClick = { isChecklistDropdownExpanded = !isChecklistDropdownExpanded },
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+                            ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "Current List",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = currentAssignedChecklist?.name ?: "No List",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Icon(
+                                    imageVector = if (isChecklistDropdownExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Select List",
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = isChecklistDropdownExpanded,
+                            onDismissRequest = { isChecklistDropdownExpanded = false },
+                            modifier = Modifier.fillMaxWidth(0.85f)
+                        ) {
+                            checklists.forEach { cl ->
+                                DropdownMenuItem(
+                                    text = { Text(cl.name) },
+                                    onClick = {
+                                        targetChecklistId = cl.id
+                                        isChecklistDropdownExpanded = false
+                                    },
+                                    leadingIcon = {
+                                        Text(text = if (cl.id == targetChecklistId) "🎯" else "📋")
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -4212,7 +4377,8 @@ fun ChecklistScreen(
                                 isReminderEnabled = isTimeReminderEnabled,
                                 isAllDay = isAllDay,
                                 reminderTime = remTime,
-                                repeatInterval = repeatInterval
+                                repeatInterval = repeatInterval,
+                                checklistId = targetChecklistId
                             )
                         )
                         editingItem = null
@@ -4772,18 +4938,6 @@ fun ChecklistScreen(
                 isFirstRun = false
             }
         )
-    } else if (reminderAlerts.isNotEmpty()) {
-        val activeAlert = reminderAlerts.find { !it.id.contains("imminent") }
-        if (activeAlert != null) {
-            PremiumAlarmOverlay(
-                alert = activeAlert,
-                viewModel = viewModel,
-                onShowCompleteList = { checklistId ->
-                    viewModel.selectedChecklistId.value = checklistId
-                    selectedSection = "checklists"
-                }
-            )
-        }
     }
 }
 
@@ -4889,7 +5043,10 @@ fun ChecklistItemRow(
     onDeactivateAlarm: () -> Unit,
     modifier: Modifier = Modifier,
     onToggleAddedToToday: (() -> Unit)? = null,
-    isTodayList: Boolean = false
+    isTodayList: Boolean = false,
+    isRearrangeModeActive: Boolean = false,
+    rearrangeTapSequence: List<Int> = emptyList(),
+    onRearrangeTap: (() -> Unit)? = null
 ) {
     val callNumber = parseCallShortcut(item.text)
     val waNumber = parseWaShortcut(item.text)
@@ -4904,7 +5061,10 @@ fun ChecklistItemRow(
             onMoveDown = onMoveDown,
             onConfigureReminder = onConfigureReminder,
             onDelete = onDelete,
-            onCheckChange = onCheckChange
+            onCheckChange = onCheckChange,
+            isRearrangeModeActive = isRearrangeModeActive,
+            rearrangeTapSequence = rearrangeTapSequence,
+            onRearrangeTap = onRearrangeTap
         )
         return
     }
@@ -4918,7 +5078,10 @@ fun ChecklistItemRow(
             onMoveDown = onMoveDown,
             onConfigureReminder = onConfigureReminder,
             onDelete = onDelete,
-            onCheckChange = onCheckChange
+            onCheckChange = onCheckChange,
+            isRearrangeModeActive = isRearrangeModeActive,
+            rearrangeTapSequence = rearrangeTapSequence,
+            onRearrangeTap = onRearrangeTap
         )
         return
     }
@@ -4980,12 +5143,18 @@ fun ChecklistItemRow(
                     scaleY = cardScale
                     alpha = cardAlpha
                 }
-                .pointerInput(item.id) {
-                    detectTapGestures(
-                        onDoubleTap = {
-                            showActions = !showActions
+                .let { m ->
+                    if (isRearrangeModeActive) {
+                        m.clickable { onRearrangeTap?.invoke() }
+                    } else {
+                        m.pointerInput(item.id) {
+                            detectTapGestures(
+                                onDoubleTap = {
+                                    showActions = !showActions
+                                }
+                            )
                         }
-                    )
+                    }
                 }
                 .testTag("checklist_item_row_${item.id}"),
             elevation = CardDefaults.cardElevation(
@@ -5004,46 +5173,82 @@ fun ChecklistItemRow(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Checkbox
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { onCheckChange() }
-                        .testTag("item_checkbox_${item.id}"),
-                    contentAlignment = Alignment.Center
-                ) {
+                // Checkbox or Rearrange badge
+                if (isRearrangeModeActive) {
+                    val tapIndex = rearrangeTapSequence.indexOf(item.id)
                     Box(
                         modifier = Modifier
-                            .size(20.dp)
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(
-                                if (item.isCompleted) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .border(
-                                width = 2.dp,
-                                color = if (item.isCompleted) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outline,
-                                shape = RoundedCornerShape(5.dp)
-                            ),
+                            .size(36.dp)
+                            .testTag("item_rearrange_badge_${item.id}"),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (item.isCompleted) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Completed check",
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(12.dp)
+                        if (tapIndex != -1) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = (tapIndex + 1).toString(),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .border(
+                                        width = 1.5.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                                        shape = CircleShape
+                                    )
                             )
                         }
                     }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onCheckChange() }
+                            .testTag("item_checkbox_${item.id}"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(
+                                    if (item.isCompleted) MaterialTheme.colorScheme.primary
+                                    else Color.Transparent
+                                )
+                                .border(
+                                    width = 2.dp,
+                                    color = if (item.isCompleted) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outline,
+                                    shape = RoundedCornerShape(5.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (item.isCompleted) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Completed check",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
 
-                    // Overlay the micro particle confetti explosion right inside the checkbox bound!
-                    MicroConfettiEffect(
-                        trigger = triggerConfetti,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                        // Overlay the micro particle confetti explosion right inside the checkbox bound!
+                        MicroConfettiEffect(
+                            trigger = triggerConfetti,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
                 }
 
                 // Description and small reminder tags
@@ -6623,6 +6828,10 @@ fun TodayPlannerView(
     checklists: List<Checklist> = emptyList(),
     categories: List<Category> = emptyList(),
     isKeyboardVisible: Boolean = false,
+    isRearrangeModeActive: Boolean = false,
+    rearrangeTapSequence: List<Int> = emptyList(),
+    onRearrangeTap: (ChecklistItem) -> Unit = {},
+    onToggleRearrangeMode: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var newTaskText by remember { mutableStateOf("") }
@@ -6694,7 +6903,7 @@ fun TodayPlannerView(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             val dateFormat = java.text.SimpleDateFormat("EEEE, MMM d", java.util.Locale.getDefault())
                             Text(
                                 text = dateFormat.format(java.util.Date()),
@@ -6707,7 +6916,27 @@ fun TodayPlannerView(
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                             )
                         }
-                        DynamicCalendarIcon(size = 32.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            IconButton(
+                                onClick = onToggleRearrangeMode,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(
+                                        color = if (isRearrangeModeActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                        shape = CircleShape
+                                    )
+                                    .testTag("today_rearrange_button")
+                            ) {
+                                BeautifulSwapVertIcon(
+                                    tint = if (isRearrangeModeActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            DynamicCalendarIcon(size = 32.dp)
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -6835,7 +7064,10 @@ fun TodayPlannerView(
                                     shortcutToChecklistIdToConfirm = shortcutChecklistId
                                     confirmationTitle = "Mark List as Done?"
                                     confirmationMessage = "Are you sure you want to mark this task list as completed? It will disappear from Today's planner."
-                                }
+                                },
+                                isRearrangeModeActive = isRearrangeModeActive,
+                                rearrangeTapSequence = rearrangeTapSequence,
+                                onRearrangeTap = { onRearrangeTap(item) }
                             )
                         } else if (callNumber != null) {
                             CallShortcutRow(
@@ -6852,7 +7084,10 @@ fun TodayPlannerView(
                                     shortcutToChecklistIdToConfirm = null
                                     confirmationTitle = "Mark Call as Done?"
                                     confirmationMessage = "Are you sure you want to mark this phone call as completed? It will disappear from Today's planner."
-                                }
+                                },
+                                isRearrangeModeActive = isRearrangeModeActive,
+                                rearrangeTapSequence = rearrangeTapSequence,
+                                onRearrangeTap = { onRearrangeTap(item) }
                             )
                         } else if (waNumber != null) {
                             WhatsAppShortcutRow(
@@ -6869,7 +7104,10 @@ fun TodayPlannerView(
                                     shortcutToChecklistIdToConfirm = null
                                     confirmationTitle = "Mark WhatsApp as Done?"
                                     confirmationMessage = "Are you sure you want to mark this WhatsApp task as completed? It will disappear from Today's planner."
-                                }
+                                },
+                                isRearrangeModeActive = isRearrangeModeActive,
+                                rearrangeTapSequence = rearrangeTapSequence,
+                                onRearrangeTap = { onRearrangeTap(item) }
                             )
                         } else {
                             ChecklistItemRow(
@@ -6882,7 +7120,10 @@ fun TodayPlannerView(
                                 onCheckChange = { viewModel.toggleItemCompletion(item) },
                                 onDelete = { onDelete(item) },
                                 onDeactivateAlarm = { onDeactivateAlarm(item) },
-                                isTodayList = true
+                                isTodayList = true,
+                                isRearrangeModeActive = isRearrangeModeActive,
+                                rearrangeTapSequence = rearrangeTapSequence,
+                                onRearrangeTap = { onRearrangeTap(item) }
                             )
                         }
                     }
@@ -6911,7 +7152,10 @@ fun TodayPlannerView(
                             onDelete = { onDelete(item) },
                             onDeactivateAlarm = { onDeactivateAlarm(item) },
                             onToggleAddedToToday = { viewModel.toggleItemAddedToToday(item) },
-                            isTodayList = true
+                            isTodayList = true,
+                            isRearrangeModeActive = isRearrangeModeActive,
+                            rearrangeTapSequence = rearrangeTapSequence,
+                            onRearrangeTap = { onRearrangeTap(item) }
                         )
                     }
                 }
@@ -6938,7 +7182,10 @@ fun TodayPlannerView(
                             onCheckChange = { viewModel.toggleItemCompletion(item) },
                             onDelete = { onDelete(item) },
                             onDeactivateAlarm = { onDeactivateAlarm(item) },
-                            onToggleAddedToToday = { viewModel.toggleItemAddedToToday(item) }
+                            onToggleAddedToToday = { viewModel.toggleItemAddedToToday(item) },
+                            isRearrangeModeActive = isRearrangeModeActive,
+                            rearrangeTapSequence = rearrangeTapSequence,
+                            onRearrangeTap = { onRearrangeTap(item) }
                         )
                     }
                 }
@@ -10261,7 +10508,10 @@ fun ChecklistShortcutRow(
     onConfigureReminder: () -> Unit,
     onNavigateToChecklist: () -> Unit,
     onDelete: () -> Unit,
-    onCheckChange: () -> Unit
+    onCheckChange: () -> Unit,
+    isRearrangeModeActive: Boolean = false,
+    rearrangeTapSequence: List<Int> = emptyList(),
+    onRearrangeTap: (() -> Unit)? = null
 ) {
     val cleanName = checklist?.name ?: cleanShortcutText(item.text)
     val cleanIcon = checklist?.icon?.ifBlank { "📋" } ?: "📋"
@@ -10275,6 +10525,13 @@ fun ChecklistShortcutRow(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
         modifier = Modifier
             .fillMaxWidth()
+            .let { m ->
+                if (isRearrangeModeActive) {
+                    m.clickable { onRearrangeTap?.invoke() }
+                } else {
+                    m
+                }
+            }
             .testTag("checklist_shortcut_${checklist?.id ?: 0}")
     ) {
         Row(
@@ -10283,28 +10540,64 @@ fun ChecklistShortcutRow(
                 .padding(horizontal = 14.dp, vertical = 12.dp)
                 .fillMaxWidth()
         ) {
-            // Checkbox/Done Tick Action Region
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onCheckChange() }
-                    .testTag("shortcut_checkbox_${item.id}"),
-                contentAlignment = Alignment.Center
-            ) {
+            // Checkbox/Done Tick Action Region or Rearrange badge
+            if (isRearrangeModeActive) {
+                val tapIndex = rearrangeTapSequence.indexOf(item.id)
                 Box(
                     modifier = Modifier
-                        .size(22.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(androidx.compose.ui.graphics.Color.Transparent)
-                        .border(
-                            width = 2.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(6.dp)
-                        ),
+                        .size(36.dp)
+                        .testTag("shortcut_rearrange_badge_${item.id}"),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Outlined representation of an active, tickable bubble
+                    if (tapIndex != -1) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = (tapIndex + 1).toString(),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .border(
+                                    width = 1.5.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onCheckChange() }
+                        .testTag("shortcut_checkbox_${item.id}"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(androidx.compose.ui.graphics.Color.Transparent)
+                            .border(
+                                width = 2.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = RoundedCornerShape(6.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Outlined representation of an active, tickable bubble
+                    }
                 }
             }
 
@@ -10494,7 +10787,10 @@ fun CallShortcutRow(
     onMoveDown: () -> Unit,
     onConfigureReminder: () -> Unit,
     onDelete: () -> Unit,
-    onCheckChange: () -> Unit
+    onCheckChange: () -> Unit,
+    isRearrangeModeActive: Boolean = false,
+    rearrangeTapSequence: List<Int> = emptyList(),
+    onRearrangeTap: (() -> Unit)? = null
 ) {
     val cleanName = cleanCallShortcutText(item.text)
     val context = LocalContext.current
@@ -10508,6 +10804,13 @@ fun CallShortcutRow(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
         modifier = Modifier
             .fillMaxWidth()
+            .let { m ->
+                if (isRearrangeModeActive) {
+                    m.clickable { onRearrangeTap?.invoke() }
+                } else {
+                    m
+                }
+            }
             .testTag("call_shortcut_${item.id}")
     ) {
         Row(
@@ -10516,37 +10819,73 @@ fun CallShortcutRow(
                 .padding(horizontal = 14.dp, vertical = 12.dp)
                 .fillMaxWidth()
         ) {
-            // Checkbox/Done Tick Action Region
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onCheckChange() }
-                    .testTag("shortcut_checkbox_${item.id}"),
-                contentAlignment = Alignment.Center
-            ) {
+            // Checkbox/Done Tick Action Region or Rearrange badge
+            if (isRearrangeModeActive) {
+                val tapIndex = rearrangeTapSequence.indexOf(item.id)
                 Box(
                     modifier = Modifier
-                        .size(22.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (item.isCompleted) MaterialTheme.colorScheme.primary
-                            else androidx.compose.ui.graphics.Color.Transparent
-                        )
-                        .border(
-                            width = 2.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(6.dp)
-                        ),
+                        .size(36.dp)
+                        .testTag("shortcut_rearrange_badge_${item.id}"),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (item.isCompleted) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = "Completed check",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(14.dp)
+                    if (tapIndex != -1) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = (tapIndex + 1).toString(),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .border(
+                                    width = 1.5.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                                    shape = CircleShape
+                                )
                         )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onCheckChange() }
+                        .testTag("shortcut_checkbox_${item.id}"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (item.isCompleted) MaterialTheme.colorScheme.primary
+                                else androidx.compose.ui.graphics.Color.Transparent
+                            )
+                            .border(
+                                width = 2.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = RoundedCornerShape(6.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (item.isCompleted) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Completed check",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -10700,7 +11039,10 @@ fun WhatsAppShortcutRow(
     onMoveDown: () -> Unit,
     onConfigureReminder: () -> Unit,
     onDelete: () -> Unit,
-    onCheckChange: () -> Unit
+    onCheckChange: () -> Unit,
+    isRearrangeModeActive: Boolean = false,
+    rearrangeTapSequence: List<Int> = emptyList(),
+    onRearrangeTap: (() -> Unit)? = null
 ) {
     val cleanName = cleanWaShortcutText(item.text)
     val displayWaNumber = formatDisplayWhatsAppNumber(waNumber)
@@ -10715,6 +11057,13 @@ fun WhatsAppShortcutRow(
         border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.4f)),
         modifier = Modifier
             .fillMaxWidth()
+            .let { m ->
+                if (isRearrangeModeActive) {
+                    m.clickable { onRearrangeTap?.invoke() }
+                } else {
+                    m
+                }
+            }
             .testTag("wa_shortcut_${item.id}")
     ) {
         Row(
@@ -10723,37 +11072,73 @@ fun WhatsAppShortcutRow(
                 .padding(horizontal = 14.dp, vertical = 12.dp)
                 .fillMaxWidth()
         ) {
-            // Checkbox/Done Tick Action Region
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onCheckChange() }
-                    .testTag("shortcut_checkbox_${item.id}"),
-                contentAlignment = Alignment.Center
-            ) {
+            // Checkbox/Done Tick Action Region or Rearrange badge
+            if (isRearrangeModeActive) {
+                val tapIndex = rearrangeTapSequence.indexOf(item.id)
                 Box(
                     modifier = Modifier
-                        .size(22.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (item.isCompleted) Color(0xFF4CAF50)
-                            else androidx.compose.ui.graphics.Color.Transparent
-                        )
-                        .border(
-                            width = 2.dp,
-                            color = Color(0xFF4CAF50),
-                            shape = RoundedCornerShape(6.dp)
-                        ),
+                        .size(36.dp)
+                        .testTag("shortcut_rearrange_badge_${item.id}"),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (item.isCompleted) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = "Completed check",
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp)
+                    if (tapIndex != -1) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = (tapIndex + 1).toString(),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .border(
+                                    width = 1.5.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                                    shape = CircleShape
+                                )
                         )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onCheckChange() }
+                        .testTag("shortcut_checkbox_${item.id}"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (item.isCompleted) Color(0xFF4CAF50)
+                                else androidx.compose.ui.graphics.Color.Transparent
+                            )
+                            .border(
+                                width = 2.dp,
+                                color = Color(0xFF4CAF50),
+                                shape = RoundedCornerShape(6.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (item.isCompleted) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Completed check",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -10978,7 +11363,7 @@ fun CompletedTasksView(
         val projectsCategory = categories.find { it.name.lowercase().trim() == "projects" }
         val projectsCategoryId = projectsCategory?.id
 
-        val todoCategory = categories.find { it.name.lowercase().trim() == "tasks & todo" || it.name.lowercase().trim() == "todo" }
+        val todoCategory = categories.find { it.name.lowercase().trim() == "general" || it.name.lowercase().trim() == "tasks & todo" || it.name.lowercase().trim() == "todo" }
         val todoCategoryId = todoCategory?.id
 
         val todayChecklist = checklists.find { it.name == "Today's Focus Tasks" }
@@ -10992,6 +11377,7 @@ fun CompletedTasksView(
                     parentChecklist.id != ideaChecklist?.id &&
                     parentChecklist.categoryId != projectsCategoryId &&
                     (todoCategoryId == null || parentChecklist.categoryId != todoCategoryId) &&
+                    parentChecklist.name != "General" &&
                     parentChecklist.name != "General Todo List"
 
             !isStandardChecklist
@@ -12121,4 +12507,72 @@ fun fetchPublicHolidays(year: Int, countryCode: String): List<PublicHoliday> {
     }
     return resultList
 }
+
+@Composable
+fun BeautifulSwapVertIcon(
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val strokeWidthPx = 1.75.dp.toPx()
+        
+        // Left arrow (Up)
+        val leftX = w * 0.35f
+        val startY1 = h * 0.22f
+        val endY1 = h * 0.78f
+        drawLine(
+            color = tint,
+            start = Offset(leftX, startY1),
+            end = Offset(leftX, endY1),
+            strokeWidth = strokeWidthPx,
+            cap = StrokeCap.Round
+        )
+        // Up arrowhead
+        val arrowSize = 3.5.dp.toPx()
+        drawLine(
+            color = tint,
+            start = Offset(leftX, startY1),
+            end = Offset(leftX - arrowSize, startY1 + arrowSize),
+            strokeWidth = strokeWidthPx,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = tint,
+            start = Offset(leftX, startY1),
+            end = Offset(leftX + arrowSize, startY1 + arrowSize),
+            strokeWidth = strokeWidthPx,
+            cap = StrokeCap.Round
+        )
+        
+        // Right arrow (Down)
+        val rightX = w * 0.65f
+        val startY2 = h * 0.22f
+        val endY2 = h * 0.78f
+        drawLine(
+            color = tint,
+            start = Offset(rightX, startY2),
+            end = Offset(rightX, endY2),
+            strokeWidth = strokeWidthPx,
+            cap = StrokeCap.Round
+        )
+        // Down arrowhead
+        drawLine(
+            color = tint,
+            start = Offset(rightX, endY2),
+            end = Offset(rightX - arrowSize, endY2 - arrowSize),
+            strokeWidth = strokeWidthPx,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = tint,
+            start = Offset(rightX, endY2),
+            end = Offset(rightX + arrowSize, endY2 - arrowSize),
+            strokeWidth = strokeWidthPx,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
 

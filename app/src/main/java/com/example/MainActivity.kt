@@ -69,11 +69,12 @@ class MainActivity : ComponentActivity() {
 
         // Register dismiss BroadcastReceiver safely with RECEIVER_NOT_EXPORTED for security
         val filter = IntentFilter("com.example.ACTION_DISMISS_ALERT")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(dismissReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(dismissReceiver, filter)
-        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            dismissReceiver,
+            filter,
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         // Handle quick-add intent extra from widget
         if (intent?.getBooleanExtra("focus_add_task", false) == true) {

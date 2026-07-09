@@ -308,21 +308,24 @@ class ChecklistViewModel(
             projectsCategory.id.toLong()
         }
 
-        // Ensure "Tasks & Todo" category exists
-        val todoCategory = currentCats.find { it.name.lowercase().trim() == "tasks & todo" || it.name.lowercase().trim() == "todo" }
+        // Ensure "General" category exists (renamed from "Tasks & Todo" / "Todo" if existing)
+        val todoCategory = currentCats.find { it.name.lowercase().trim() == "general" || it.name.lowercase().trim() == "tasks & todo" || it.name.lowercase().trim() == "todo" }
         val todoCatId = if (todoCategory == null) {
-            repository.insertCategory(Category(name = "Tasks & Todo", color = "#4CAF50"))
+            repository.insertCategory(Category(name = "General", color = "#4CAF50"))
         } else {
+            if (todoCategory.name != "General") {
+                repository.updateCategory(todoCategory.copy(name = "General"))
+            }
             todoCategory.id.toLong()
         }
 
-        // Ensure "General Todo List" exists
+        // Ensure "General" Checklist exists (renamed from "General Todo List" if existing)
         val currentLists = repository.allChecklists.first()
-        var todoList = currentLists.find { it.name == "General Todo List" }
+        var todoList = currentLists.find { it.name == "General" || it.name == "General Todo List" }
         if (todoList == null) {
             val todoId = repository.insertChecklist(
                 Checklist(
-                    name = "General Todo List",
+                    name = "General",
                     icon = "✅",
                     categoryId = todoCatId.toInt(),
                     isTemplate = false
@@ -331,9 +334,20 @@ class ChecklistViewModel(
             // Prepopulate some sample general tasks if empty
             repository.insertItem(ChecklistItem(checklistId = todoId.toInt(), text = "Buy groceries & weekly ingredients", position = 0))
             repository.insertItem(ChecklistItem(checklistId = todoId.toInt(), text = "Schedule dentist appointment", position = 1))
-        } else if (todoList.categoryId == null) {
-            // Migrating existing "General Todo List" to belong to the todoCategory
-            repository.updateChecklist(todoList.copy(categoryId = todoCatId.toInt()))
+        } else {
+            var updatedList = todoList
+            var needsUpdate = false
+            if (todoList.name != "General") {
+                updatedList = updatedList.copy(name = "General")
+                needsUpdate = true
+            }
+            if (todoList.categoryId == null) {
+                updatedList = updatedList.copy(categoryId = todoCatId.toInt())
+                needsUpdate = true
+            }
+            if (needsUpdate) {
+                repository.updateChecklist(updatedList)
+            }
         }
 
         // Ensure "Today's Focus Tasks" exists
@@ -508,6 +522,16 @@ class ChecklistViewModel(
                                         )
                                         updateReminderSystem()
                                     }
+                                }
+                            }
+                        }
+
+                        // Auto-activation of items when set date arrives
+                        for (item in items) {
+                            if (item.checklistId != todayList.id && !item.isCompleted && item.dueDate != null && !item.isAddedToToday) {
+                                if (isTimestampTodayGeneral(item.dueDate, now) || item.dueDate <= now) {
+                                    repository.updateItem(item.copy(isAddedToToday = true))
+                                    updateReminderSystem()
                                 }
                             }
                         }
@@ -743,8 +767,8 @@ class ChecklistViewModel(
                             alerts.add(
                                 ReminderAlert(
                                     id = "list_reminder_${checklist.id}",
-                                    title = "⏰ Checklist Reminder",
-                                    message = "Checklist '${checklist.name}' reminder is active today!",
+                                    title = "⏰ Time for '${checklist.name}'",
+                                    message = "It's time to focus on your '${checklist.name}' list.",
                                     isPastDue = false,
                                     checklistName = checklist.name,
                                     checklistId = checklist.id
@@ -764,8 +788,8 @@ class ChecklistViewModel(
                                 alerts.add(
                                     ReminderAlert(
                                         id = "list_past_due_${checklist.id}",
-                                        title = "⚠️ Checklist Overdue",
-                                        message = "'${checklist.name}' checklist was due!",
+                                        title = "⚠️ Overdue: '${checklist.name}'",
+                                        message = "Your '${checklist.name}' checklist is overdue. Take a look when you have a moment.",
                                         isPastDue = true,
                                         checklistName = checklist.name,
                                         checklistId = checklist.id
@@ -773,11 +797,16 @@ class ChecklistViewModel(
                                 )
                             } else if (diff < 86400000) { // Due within 24h
                                 val hours = (diff / 3600000).coerceAtLeast(0)
+                                val imminentMsg = when {
+                                    hours == 1L -> "Your '${checklist.name}' checklist is due in an hour."
+                                    hours == 0L -> "Your '${checklist.name}' checklist is due very soon!"
+                                    else -> "Your '${checklist.name}' checklist is due in $hours hours."
+                                }
                                 alerts.add(
                                     ReminderAlert(
                                         id = "list_imminent_${checklist.id}",
-                                        title = "⏰ Checklist Closing Due",
-                                        message = "'${checklist.name}' checklist is due in $hours hour(s).",
+                                        title = "⏰ Due Soon: '${checklist.name}'",
+                                        message = imminentMsg,
                                         isPastDue = false,
                                         checklistName = checklist.name,
                                         checklistId = checklist.id
@@ -816,8 +845,8 @@ class ChecklistViewModel(
                                 alerts.add(
                                     ReminderAlert(
                                         id = "list_loc_${checklist.id}",
-                                        title = "📍 Location Reminder",
-                                        message = "You arrived at '${checklist.locationName}'! Checklist is active: '${checklist.name}'",
+                                        title = "📍 Arrived at ${checklist.locationName}",
+                                        message = "You're near ${checklist.locationName}. Would you like to check off some items from '${checklist.name}'?",
                                         isPastDue = false,
                                         checklistName = checklist.name,
                                         checklistId = checklist.id
@@ -836,11 +865,13 @@ class ChecklistViewModel(
                     // Scheduled/Repeating reminders for items
                     if (item.isReminderEnabled && item.dueDate != null) {
                         if (isScheduledTimeReachedForItem(item, now)) {
+                            val titleText = if (item.text.length < 25) "⏰ Time for '${item.text}'" else "⏰ Task Reminder"
+                            val messageText = if (item.text.length < 25) "It's time to start this task today." else "It's time to start working on '${item.text}'."
                             alerts.add(
                                 ReminderAlert(
                                     id = "item_reminder_${item.id}",
-                                    title = "⏰ Checkpoint Reminder",
-                                    message = "Checkpoint '${item.text}' is active today!",
+                                    title = titleText,
+                                    message = messageText,
                                     isPastDue = false,
                                     itemText = item.text,
                                     checklistName = checklist.name,
@@ -856,8 +887,8 @@ class ChecklistViewModel(
                                 alerts.add(
                                     ReminderAlert(
                                         id = "item_past_due_${item.id}",
-                                        title = "⚠️ Checkpoint Overdue",
-                                        message = "Item '${item.text}' is PAST DUE!",
+                                        title = "⚠️ Overdue: '${item.text}'",
+                                        message = "The task was due. Tap to update or complete it.",
                                         isPastDue = true,
                                         itemText = item.text,
                                         checklistName = checklist.name,
@@ -866,11 +897,16 @@ class ChecklistViewModel(
                                 )
                             } else if (diff < 86400000) { // Due within 24h
                                 val hours = (diff / 3600000).coerceAtLeast(0)
+                                val imminentItemMsg = when {
+                                    hours == 1L -> "'${item.text}' is due in an hour."
+                                    hours == 0L -> "'${item.text}' is due very soon!"
+                                    else -> "'${item.text}' is due in $hours hours."
+                                }
                                 alerts.add(
                                     ReminderAlert(
                                         id = "item_imminent_${item.id}",
-                                        title = "⏰ Checkpoint Imminent",
-                                        message = "Item '${item.text}' is due in $hours hour(s).",
+                                        title = "⏰ Due Soon: '${item.text}'",
+                                        message = imminentItemMsg,
                                         isPastDue = false,
                                         itemText = item.text,
                                         checklistName = checklist.name,
@@ -906,8 +942,8 @@ class ChecklistViewModel(
                                 alerts.add(
                                     ReminderAlert(
                                         id = "item_loc_${item.id}",
-                                        title = "📍 Location Reminder",
-                                        message = "Arrived at '${item.locationName}': Don't forget to '${item.text}'!",
+                                        title = "📍 Arrived at ${item.locationName}",
+                                        message = "While you're here, don't forget to: '${item.text}'.",
                                         isPastDue = false,
                                         itemText = item.text,
                                         checklistName = checklist.name,
@@ -1260,6 +1296,18 @@ class ChecklistViewModel(
     fun addItemToSpecificChecklist(checklistId: Int, text: String, dueDate: Long? = null, isAddedToToday: Boolean = false) {
         if (text.trim().isNotEmpty()) {
             viewModelScope.launch {
+                val todayList = repository.allChecklists.first().find { it.name == "Today's Focus Tasks" }
+                val isToday = (todayList != null && todayList.id == checklistId)
+                
+                val finalDueDate = if (isToday) {
+                    dueDate ?: System.currentTimeMillis()
+                } else {
+                    dueDate
+                }
+                
+                val finalReminderEnabled = if (isToday) true else (dueDate != null)
+                val finalIsAllDay = if (isToday) true else true
+                
                 val items = repository.getItemsForChecklistDirect(checklistId)
                 val currentMaxPosition = items.maxOfOrNull { it.position } ?: -1
                 repository.insertItem(
@@ -1267,7 +1315,9 @@ class ChecklistViewModel(
                         checklistId = checklistId,
                         text = text.trim(),
                         position = currentMaxPosition + 1,
-                        dueDate = dueDate,
+                        dueDate = finalDueDate,
+                        isReminderEnabled = finalReminderEnabled,
+                        isAllDay = finalIsAllDay,
                         isAddedToToday = isAddedToToday
                     )
                 )
@@ -1397,13 +1447,27 @@ class ChecklistViewModel(
         val listId = selectedChecklistId.value ?: return
         if (text.trim().isNotEmpty()) {
             viewModelScope.launch {
+                val todayList = repository.allChecklists.first().find { it.name == "Today's Focus Tasks" }
+                val isToday = (todayList != null && todayList.id == listId)
+                
+                val finalDueDate = if (isToday) {
+                    dueDate ?: System.currentTimeMillis()
+                } else {
+                    dueDate
+                }
+                
+                val finalReminderEnabled = if (isToday) true else (dueDate != null)
+                val finalIsAllDay = if (isToday) true else true
+                
                 val currentMaxPosition = _currentItems.value.maxOfOrNull { it.position } ?: -1
                 repository.insertItem(
                     ChecklistItem(
                         checklistId = listId,
                         text = text.trim(),
                         position = currentMaxPosition + 1,
-                        dueDate = dueDate
+                        dueDate = finalDueDate,
+                        isReminderEnabled = finalReminderEnabled,
+                        isAllDay = finalIsAllDay
                     )
                 )
                 updateReminderSystem()
@@ -1413,7 +1477,40 @@ class ChecklistViewModel(
 
     fun updateItem(item: ChecklistItem) {
         viewModelScope.launch {
-            repository.updateItem(item)
+            val allLists = repository.allChecklists.first()
+            val todayList = allLists.find { it.name == "Today's Focus Tasks" }
+            val generalList = allLists.find { it.name == "General" || it.name == "General Todo List" }
+            
+            val oldItem = allItems.value.find { it.id == item.id }
+            var finalItem = item
+            
+            if (oldItem != null) {
+                val wasInTodayWindow = (todayList != null && oldItem.checklistId == todayList.id) || oldItem.isAddedToToday
+                val newDate = item.dueDate
+                val isNewDateToday = isTimestampToday(newDate)
+                
+                if (wasInTodayWindow && newDate != null && !isNewDateToday) {
+                    if (todayList != null && oldItem.checklistId == todayList.id) {
+                        if (generalList != null) {
+                            finalItem = finalItem.copy(
+                                checklistId = generalList.id,
+                                isAddedToToday = false
+                            )
+                        }
+                    } else {
+                        finalItem = finalItem.copy(isAddedToToday = false)
+                    }
+                }
+            }
+            
+            repository.updateItem(finalItem)
+            updateReminderSystem()
+        }
+    }
+
+    fun updateItemPositions(items: List<ChecklistItem>) {
+        viewModelScope.launch {
+            repository.updateItems(items)
             updateReminderSystem()
         }
     }
@@ -1510,7 +1607,7 @@ class ChecklistViewModel(
             val projectsCategory = cats.find { it.name.lowercase().trim() == "projects" }
             val projectsCategoryId = projectsCategory?.id
 
-            val todoCategory = cats.find { it.name.lowercase().trim() == "tasks & todo" || it.name.lowercase().trim() == "todo" }
+            val todoCategory = cats.find { it.name.lowercase().trim() == "general" || it.name.lowercase().trim() == "tasks & todo" || it.name.lowercase().trim() == "todo" }
             val todoCategoryId = todoCategory?.id
 
             val todayChecklist = lists.find { it.name == "Today's Focus Tasks" }
@@ -1524,6 +1621,7 @@ class ChecklistViewModel(
                         parentChecklist.id != ideaChecklist?.id &&
                         parentChecklist.categoryId != projectsCategoryId &&
                         (todoCategoryId == null || parentChecklist.categoryId != todoCategoryId) &&
+                        parentChecklist.name != "General" &&
                         parentChecklist.name != "General Todo List"
 
                 !isStandardChecklist

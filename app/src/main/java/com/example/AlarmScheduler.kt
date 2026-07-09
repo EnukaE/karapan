@@ -175,8 +175,8 @@ object AlarmScheduler {
                                 scheduleAlarm(
                                     context = context,
                                     id = "list_past_due_${checklist.id}",
-                                    title = "⏰ Checklist Reminder",
-                                    message = "Checklist '${checklist.name}' reminder is active!",
+                                    title = "⏰ Time for '${checklist.name}'",
+                                    message = "It's time to focus on your '${checklist.name}' list.",
                                     triggerTime = nextTrigger
                                 )
                             } else {
@@ -189,8 +189,8 @@ object AlarmScheduler {
                                     scheduleAlarm(
                                         context = context,
                                         id = "list_past_due_${checklist.id}",
-                                        title = "⚠️ Checklist Overdue",
-                                        message = "'${checklist.name}' checklist was due!",
+                                        title = "⚠️ Overdue: '${checklist.name}'",
+                                        message = "Your '${checklist.name}' checklist is overdue. Take a look when you have a moment.",
                                         triggerTime = due
                                     )
                                 } else {
@@ -218,11 +218,13 @@ object AlarmScheduler {
                                 repeatInterval = item.repeatInterval
                             )
                             if (nextTrigger != null && nextTrigger > now) {
+                                val titleText = if (item.text.length < 25) "⏰ Time for '${item.text}'" else "⏰ Task Reminder"
+                                val messageText = if (item.text.length < 25) "It's time to start this task today." else "It's time to start working on '${item.text}'."
                                 scheduleAlarm(
                                     context = context,
                                     id = "item_past_due_${item.id}",
-                                    title = "⏰ Checkpoint Reminder",
-                                    message = "Checkpoint '${item.text}' is scheduled now!",
+                                    title = titleText,
+                                    message = messageText,
                                     triggerTime = nextTrigger
                                 )
                             } else {
@@ -234,8 +236,8 @@ object AlarmScheduler {
                                     scheduleAlarm(
                                         context = context,
                                         id = "item_past_due_${item.id}",
-                                        title = "⚠️ Checkpoint Overdue",
-                                        message = "Item '${item.text}' is PAST DUE!",
+                                        title = "⚠️ Overdue: '${item.text}'",
+                                        message = "The task was due. Tap to update or complete it.",
                                         triggerTime = itemDue
                                     )
                                 } else {
